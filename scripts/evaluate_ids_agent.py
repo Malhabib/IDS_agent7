@@ -46,10 +46,13 @@ def render_binary_table(results: dict[str, dict[str, float]]) -> str:
         "Metric Types",
         "Metrics",
         "RF",
+        "LR",
+        "KNN",
+        "MLP",
+        "DT",
+        "SVC",
         "Majority Vote",
-        "IDS-Agent (GPT-3.5)",
-        "IDS-Agent (GPT-4o-mini)",
-        "IDS-Agent (GPT-4o)",
+        "IDS-Agent",
     ]
     rows = [
         ["Binary-Class", "Binary-Class Accuracy ↑"],
@@ -89,11 +92,16 @@ def evaluate_dataset(
     models = load_models(models_dir)
     y_true = df["label"].to_numpy()
     predictions_by_llm: dict[CoreLLM, list[str]] = {
-        CoreLLM.GPT_3_5_TURBO: [],
         CoreLLM.GPT_4O_MINI: [],
-        CoreLLM.GPT_4O: [],
     }
-    rf_predictions: list[str] = []
+    model_predictions: dict[str, list[str]] = {
+        "rf": [],
+        "lr": [],
+        "knn": [],
+        "mlp": [],
+        "dt": [],
+        "svc": [],
+    }
     majority_predictions: list[str] = []
 
     for _, row in df.iterrows():
@@ -107,31 +115,29 @@ def evaluate_dataset(
             model_reasoning.append(
                 generate_model_reasoning(model_name, top_prediction)
             )
-            if model_name == "rf":
-                rf_predictions.append(top_prediction.label)
+            if model_name in model_predictions:
+                model_predictions[model_name].append(top_prediction.label)
         query = " ".join(sorted(set(per_model_predictions)))
         knowledge = retrieve_knowledge(query)
         majority_predictions.append(majority_vote(per_model_predictions))
-        for core_llm in predictions_by_llm:
-            aggregated = aggregate_with_core_llm(
-                core_llm,
-                model_reasoning,
-                knowledge=knowledge,
-                memory_context=[],
-            )
-            predictions_by_llm[core_llm].append(aggregated.label)
+        aggregated = aggregate_with_core_llm(
+            CoreLLM.GPT_4O_MINI,
+            model_reasoning,
+            knowledge=knowledge,
+            memory_context=[],
+        )
+        predictions_by_llm[CoreLLM.GPT_4O_MINI].append(aggregated.label)
 
     results = {
-        "RF": compute_binary_metrics(y_true, np.array(rf_predictions)),
+        "RF": compute_binary_metrics(y_true, np.array(model_predictions["rf"])),
+        "LR": compute_binary_metrics(y_true, np.array(model_predictions["lr"])),
+        "KNN": compute_binary_metrics(y_true, np.array(model_predictions["knn"])),
+        "MLP": compute_binary_metrics(y_true, np.array(model_predictions["mlp"])),
+        "DT": compute_binary_metrics(y_true, np.array(model_predictions["dt"])),
+        "SVC": compute_binary_metrics(y_true, np.array(model_predictions["svc"])),
         "Majority Vote": compute_binary_metrics(y_true, np.array(majority_predictions)),
-        "IDS-Agent (GPT-3.5)": compute_binary_metrics(
-            y_true, np.array(predictions_by_llm[CoreLLM.GPT_3_5_TURBO])
-        ),
-        "IDS-Agent (GPT-4o-mini)": compute_binary_metrics(
+        "IDS-Agent": compute_binary_metrics(
             y_true, np.array(predictions_by_llm[CoreLLM.GPT_4O_MINI])
-        ),
-        "IDS-Agent (GPT-4o)": compute_binary_metrics(
-            y_true, np.array(predictions_by_llm[CoreLLM.GPT_4O])
         ),
     }
 
@@ -142,7 +148,7 @@ def evaluate_dataset(
     report = classification_report(
         y_true, predictions_by_llm[CoreLLM.GPT_4O_MINI], digits=4, zero_division=0
     )
-    print("Multi-class classification report (IDS-Agent GPT-4o-mini):")
+    print("Multi-class classification report (IDS-Agent):")
     print(report)
 
 

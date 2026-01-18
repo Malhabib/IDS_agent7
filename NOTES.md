@@ -86,7 +86,7 @@ Multi-classification metrics:
 
 Evaluation should run sample-by-sample over the CSV dataset, aggregating each classifier output
 through the core LLM before computing metrics, and report binary metrics in a table format that
-includes RF, majority vote, and IDS-Agent across core LLM choices.
+includes each ML model, majority vote, and IDS-Agent.
 
 ## Flowchart (Framework Overview)
 ```mermaid
