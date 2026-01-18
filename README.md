@@ -40,3 +40,6 @@ python scripts/evaluate_ids_agent.py path/to/dataset.csv --models-dir models
 
 The evaluation prints a binary-metrics table (RF, Majority Vote, IDS-Agent with each core LLM) plus
 multi-class precision/recall/F1 with macro-averaged values.
+
+The IDS-Agent classification flow is multi-level: per-model reasoning is generated, knowledge
+retrieval can be incorporated, and the core LLM aggregates across these levels.

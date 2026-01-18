@@ -15,6 +15,7 @@ from src.ids_agent import (
     aggregate_with_core_llm,
     classify_sample,
     generate_model_reasoning,
+    retrieve_knowledge,
 )
 
 
@@ -103,9 +104,16 @@ def evaluate_dataset(
             )
             if model_name == "rf":
                 rf_predictions.append(top_prediction.label)
+        query = " ".join(sorted(set(per_model_predictions)))
+        knowledge = retrieve_knowledge(query)
         majority_predictions.append(majority_vote(per_model_predictions))
         for core_llm in predictions_by_llm:
-            aggregated = aggregate_with_core_llm(core_llm, model_reasoning)
+            aggregated = aggregate_with_core_llm(
+                core_llm,
+                model_reasoning,
+                knowledge=knowledge,
+                memory_context=[],
+            )
             predictions_by_llm[core_llm].append(aggregated.label)
 
     results = {

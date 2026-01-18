@@ -38,6 +38,18 @@ class AggregatedDecision:
     model_reasoning: List[ModelReasoning]
 
 
+@dataclass(frozen=True)
+class KnowledgeSnippet:
+    source: str
+    content: str
+
+
+@dataclass(frozen=True)
+class KnowledgeRetrievalResult:
+    query: str
+    snippets: List[KnowledgeSnippet]
+
+
 def drop_irrelevant_fields(
     frame: pd.DataFrame,
     *,
@@ -166,9 +178,36 @@ def generate_model_reasoning(
     )
 
 
+def retrieve_knowledge(query: str) -> KnowledgeRetrievalResult:
+    """Stub for knowledge retrieval to support multi-level classification."""
+    return KnowledgeRetrievalResult(query=query, snippets=[])
+
+
+def assemble_context(
+    model_reasoning: Sequence[ModelReasoning],
+    knowledge: KnowledgeRetrievalResult,
+    memory_context: Sequence[str],
+) -> List[str]:
+    context_lines = ["Model reasoning:"]
+    context_lines.extend(f"- {item.model_name}: {item.reasoning}" for item in model_reasoning)
+    context_lines.append(f"Knowledge retrieval query: {knowledge.query}")
+    if knowledge.snippets:
+        context_lines.append("Knowledge snippets:")
+        context_lines.extend(
+            f"- ({snippet.source}) {snippet.content}" for snippet in knowledge.snippets
+        )
+    if memory_context:
+        context_lines.append("Long-term memory context:")
+        context_lines.extend(f"- {item}" for item in memory_context)
+    return context_lines
+
+
 def aggregate_with_core_llm(
     core_llm: CoreLLM,
     model_reasoning: Sequence[ModelReasoning],
+    *,
+    knowledge: KnowledgeRetrievalResult | None = None,
+    memory_context: Sequence[str] | None = None,
 ) -> AggregatedDecision:
     """Aggregate model reasoning into a single decision (LLM-compatible stub)."""
     if not model_reasoning:
@@ -184,13 +223,14 @@ def aggregate_with_core_llm(
 
     sorted_votes = sorted(votes.items(), key=lambda x: (-x[1], x[0]))
     top_label, _ = sorted_votes[0]
+    knowledge = knowledge or retrieve_knowledge("no-query")
+    memory_context = memory_context or []
+    context_lines = assemble_context(model_reasoning, knowledge, memory_context)
     reasoning_lines = [
         f"Core LLM ({core_llm.value}) aggregated {len(model_reasoning)} model outputs.",
-        "Model reasoning summary:",
+        "Multi-level context:",
     ]
-    reasoning_lines.extend(
-        f"- {item.model_name}: {item.reasoning}" for item in model_reasoning
-    )
+    reasoning_lines.extend(context_lines)
     reasoning_lines.append(f"Final decision (majority): {top_label}.")
     return AggregatedDecision(
         label=top_label,
