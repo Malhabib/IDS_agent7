@@ -6,25 +6,22 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
-from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
 from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 
-FEATURE_COLUMNS = [
-    "connectionTime",
-    "disconnectTime",
-    "RequestedDemand",
-    "kWhDelivered",
-]
+from src.ids_agent import (
+    build_preprocessing_pipeline,
+    drop_irrelevant_fields,
+    split_feature_columns,
+)
+
 LABEL_COLUMN = "label"
 
 MODELS = {
@@ -37,32 +34,26 @@ MODELS = {
 }
 
 
-def build_pipeline(model):
-    numeric_pipeline = Pipeline(
-        steps=[
-            ("imputer", SimpleImputer(strategy="median")),
-            ("scaler", StandardScaler()),
-        ]
+def build_pipeline(model, *, numeric_columns, categorical_columns):
+    preprocessing = build_preprocessing_pipeline(
+        numeric_columns=numeric_columns,
+        categorical_columns=categorical_columns,
     )
-    preprocessor = ColumnTransformer(
-        transformers=[("num", numeric_pipeline, FEATURE_COLUMNS)]
-    )
-    return Pipeline(steps=[("preprocessor", preprocessor), ("model", model)])
+    return Pipeline(steps=[("preprocessing", preprocessing), ("model", model)])
 
 
 def train_models(dataset_path: Path, output_dir: Path) -> None:
     df = pd.read_csv(dataset_path)
-    missing = [col for col in FEATURE_COLUMNS + [LABEL_COLUMN] if col not in df.columns]
-    if missing:
-        raise ValueError(f"Missing required columns: {missing}")
+    if LABEL_COLUMN not in df.columns:
+        raise ValueError(f"Missing required column: {LABEL_COLUMN}")
 
-    df["connectionTime"] = pd.to_datetime(df["connectionTime"], utc=True, errors="coerce")
-    df["disconnectTime"] = pd.to_datetime(df["disconnectTime"], utc=True, errors="coerce")
-    df["connectionTime"] = df["connectionTime"].astype("int64") / 1e9
-    df["disconnectTime"] = df["disconnectTime"].astype("int64") / 1e9
-
-    X = df[FEATURE_COLUMNS]
     y = df[LABEL_COLUMN]
+    feature_frame = drop_irrelevant_fields(df, label_column=LABEL_COLUMN)
+    if feature_frame.empty:
+        raise ValueError("No usable feature columns remain after preprocessing.")
+
+    numeric_columns, categorical_columns = split_feature_columns(feature_frame)
+    X = feature_frame
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
@@ -71,7 +62,9 @@ def train_models(dataset_path: Path, output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     for name, model in MODELS.items():
-        pipeline = build_pipeline(model)
+        pipeline = build_pipeline(
+            model, numeric_columns=numeric_columns, categorical_columns=categorical_columns
+        )
         pipeline.fit(X_train, y_train)
         preds = pipeline.predict(X_test)
         report = classification_report(y_test, preds)

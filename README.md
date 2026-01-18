@@ -1,26 +1,25 @@
 # IDS-Agent EV Charging Classifier
 
-This repository provides a baseline IDS-Agent classifier for EV charging sessions along with a
-training script for six ML models.
+This repository provides IDS-Agent preprocessing and classification tools for EV charging sessions
+along with a training script for six ML models.
 
-## Heuristic Classification (Runtime)
-Use the `src/ids_agent.py` module for quick, rules-based classification when models are not yet
-trained or when a lightweight decision is required.
-
-Indicators:
-- Very low charging efficiency
-- Large idle time after charging
-- Large mismatch between requested demand and delivered energy
+## Preprocessing Tool
+The preprocessing tool follows the implementation details:
+- Remove irrelevant fields (label, timestamps, flow ID).
+- Encode non-numerical fields.
+- Apply F-test feature selection.
+- Standardize extracted features.
 
 ## Model Training
-Train six classifiers (RF, KNN, LR, DT, MLP, SVC) using a labeled CSV dataset that includes:
-`connectionTime`, `disconnectTime`, `RequestedDemand`, `kWhDelivered`, and `label`. Timestamp columns
-may be ISO-8601 strings like `2019-04-25 23:23:33+0000`; the training script converts them to epoch
-seconds before model training.
+Train six classifiers (RF, KNN, LR, DT, MLP, SVC) using a labeled CSV dataset that includes a
+`label` column (0 benign, 1 malicious). The training pipeline automatically removes label/timestamp
+fields, encodes categorical features, applies F-test feature selection, and standardizes the final
+feature set.
 
 Example:
 ```bash
 python scripts/train_models.py path/to/dataset.csv --output-dir models
 ```
 
-Models are persisted as `.joblib` files for inference use.
+Models are persisted as `.joblib` files for inference use, and the classification tool returns
+top-3 label predictions with confidence scores per model.
