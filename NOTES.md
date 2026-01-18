@@ -84,7 +84,8 @@ Multi-classification metrics:
 - Macro-averaged precision, recall, and F1-score computed by averaging each metric over all classes with equal weights.
 
 Evaluation should run sample-by-sample over the CSV dataset, aggregating each classifier output
-through the core LLM before computing metrics.
+through the core LLM before computing metrics, and report binary metrics in a table format that
+includes RF, majority vote, and IDS-Agent across core LLM choices.
 
 ## Flowchart (Framework Overview)
 ```mermaid

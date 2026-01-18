@@ -11,6 +11,7 @@ from sklearn.metrics import classification_report
 
 from src.ids_agent import (
     CoreLLM,
+    ModelReasoning,
     aggregate_with_core_llm,
     classify_sample,
     generate_model_reasoning,
@@ -27,6 +28,41 @@ def compute_binary_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, 
     return {"accuracy": accuracy, "far": far}
 
 
+def majority_vote(predictions: list[str]) -> str:
+    counts: dict[str, int] = {}
+    for label in predictions:
+        counts[label] = counts.get(label, 0) + 1
+    return sorted(counts.items(), key=lambda x: (-x[1], x[0]))[0][0]
+
+
+def render_binary_table(results: dict[str, dict[str, float]]) -> str:
+    header = [
+        "Metric Types",
+        "Metrics",
+        "RF",
+        "Majority Vote",
+        "IDS-Agent (GPT-3.5)",
+        "IDS-Agent (GPT-4o-mini)",
+        "IDS-Agent (GPT-4o)",
+    ]
+    rows = [
+        ["Binary-Class", "Binary-Class Accuracy ↑"],
+        ["Binary-Class", "FAR ↓"],
+    ]
+    for model_key in header[2:]:
+        metrics = results.get(model_key, {"accuracy": 0.0, "far": 0.0})
+        rows[0].append(f"{metrics['accuracy']:.3f}")
+        rows[1].append(f"{metrics['far']:.3f}")
+
+    table_lines = [
+        "| " + " | ".join(header) + " |",
+        "| " + " | ".join(["---"] * len(header)) + " |",
+    ]
+    for row in rows:
+        table_lines.append("| " + " | ".join(row) + " |")
+    return "\n".join(table_lines)
+
+
 def load_models(models_dir: Path) -> dict[str, object]:
     models = {}
     for model_path in models_dir.glob("*.joblib"):
@@ -39,8 +75,6 @@ def load_models(models_dir: Path) -> dict[str, object]:
 def evaluate_dataset(
     dataset_path: Path,
     models_dir: Path,
-    *,
-    core_llm: CoreLLM,
 ) -> None:
     df = pd.read_csv(dataset_path)
     if "label" not in df.columns:
@@ -48,30 +82,54 @@ def evaluate_dataset(
 
     models = load_models(models_dir)
     y_true = df["label"].to_numpy()
-    y_pred = []
+    predictions_by_llm: dict[CoreLLM, list[str]] = {
+        CoreLLM.GPT_3_5_TURBO: [],
+        CoreLLM.GPT_4O_MINI: [],
+        CoreLLM.GPT_4O: [],
+    }
+    rf_predictions: list[str] = []
+    majority_predictions: list[str] = []
 
     for _, row in df.iterrows():
         sample = row.drop(labels=["label"]).to_dict()
-        model_reasoning = []
+        per_model_predictions: list[str] = []
+        model_reasoning: list[ModelReasoning] = []
         for model_name, model_pipeline in models.items():
             output = classify_sample(model_name, model_pipeline, sample, k=3)
             top_prediction = output.top_predictions[0]
+            per_model_predictions.append(top_prediction.label)
             model_reasoning.append(
                 generate_model_reasoning(model_name, top_prediction)
             )
-        aggregated = aggregate_with_core_llm(core_llm, model_reasoning)
-        y_pred.append(aggregated.label)
+            if model_name == "rf":
+                rf_predictions.append(top_prediction.label)
+        majority_predictions.append(majority_vote(per_model_predictions))
+        for core_llm in predictions_by_llm:
+            aggregated = aggregate_with_core_llm(core_llm, model_reasoning)
+            predictions_by_llm[core_llm].append(aggregated.label)
 
-    y_pred = np.array(y_pred)
+    results = {
+        "RF": compute_binary_metrics(y_true, np.array(rf_predictions)),
+        "Majority Vote": compute_binary_metrics(y_true, np.array(majority_predictions)),
+        "IDS-Agent (GPT-3.5)": compute_binary_metrics(
+            y_true, np.array(predictions_by_llm[CoreLLM.GPT_3_5_TURBO])
+        ),
+        "IDS-Agent (GPT-4o-mini)": compute_binary_metrics(
+            y_true, np.array(predictions_by_llm[CoreLLM.GPT_4O_MINI])
+        ),
+        "IDS-Agent (GPT-4o)": compute_binary_metrics(
+            y_true, np.array(predictions_by_llm[CoreLLM.GPT_4O])
+        ),
+    }
 
-    binary_metrics = compute_binary_metrics(y_true, y_pred)
-    print("Binary classification metrics:")
-    print(f"Accuracy: {binary_metrics['accuracy']:.4f}")
-    print(f"False Alarm Rate (FAR): {binary_metrics['far']:.4f}")
+    print("Binary classification table:")
+    print(render_binary_table(results))
     print()
 
-    report = classification_report(y_true, y_pred, digits=4, zero_division=0)
-    print("Multi-class classification report:")
+    report = classification_report(
+        y_true, predictions_by_llm[CoreLLM.GPT_4O_MINI], digits=4, zero_division=0
+    )
+    print("Multi-class classification report (IDS-Agent GPT-4o-mini):")
     print(report)
 
 
@@ -81,15 +139,8 @@ def main() -> None:
     parser.add_argument(
         "--models-dir", type=Path, default=Path("models"), help="Directory with .joblib models"
     )
-    parser.add_argument(
-        "--core-llm",
-        type=str,
-        default=CoreLLM.GPT_4O_MINI.value,
-        choices=[model.value for model in CoreLLM],
-        help="Core LLM used to aggregate model reasoning.",
-    )
     args = parser.parse_args()
-    evaluate_dataset(args.dataset, args.models_dir, core_llm=CoreLLM(args.core_llm))
+    evaluate_dataset(args.dataset, args.models_dir)
 
 
 if __name__ == "__main__":

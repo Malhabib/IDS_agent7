@@ -35,8 +35,8 @@ Run evaluation across the CSV dataset while generating per-model reasoning and a
 core LLM:
 
 ```bash
-python scripts/evaluate_ids_agent.py path/to/dataset.csv --models-dir models --core-llm gpt-4o-mini
+python scripts/evaluate_ids_agent.py path/to/dataset.csv --models-dir models
 ```
 
-The evaluation prints binary metrics (accuracy, FAR) and multi-class precision/recall/F1 along with
-macro-averaged values.
+The evaluation prints a binary-metrics table (RF, Majority Vote, IDS-Agent with each core LLM) plus
+multi-class precision/recall/F1 with macro-averaged values.
