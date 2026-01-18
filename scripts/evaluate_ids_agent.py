@@ -3,11 +3,16 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import sys
 
 import joblib
 import numpy as np
 import pandas as pd
 from sklearn.metrics import classification_report
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 from src.ids_agent import (
     CoreLLM,
