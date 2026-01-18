@@ -29,3 +29,14 @@ The core IDS-Agent LLM choices are:
 - GPT-3.5-Turbo
 - GPT-4o-mini
 - GPT-4o
+
+## Evaluation (Sample-by-Sample)
+Run evaluation across the CSV dataset while generating per-model reasoning and aggregating via the
+core LLM:
+
+```bash
+python scripts/evaluate_ids_agent.py path/to/dataset.csv --models-dir models --core-llm gpt-4o-mini
+```
+
+The evaluation prints binary metrics (accuracy, FAR) and multi-class precision/recall/F1 along with
+macro-averaged values.

@@ -23,6 +23,21 @@ class CoreLLM(str, Enum):
     GPT_4O = "gpt-4o"
 
 
+@dataclass(frozen=True)
+class ModelReasoning:
+    model_name: str
+    prediction: str
+    confidence: float
+    reasoning: str
+
+
+@dataclass(frozen=True)
+class AggregatedDecision:
+    label: str
+    reasoning: str
+    model_reasoning: List[ModelReasoning]
+
+
 def drop_irrelevant_fields(
     frame: pd.DataFrame,
     *,
@@ -132,3 +147,53 @@ def classify_sample(
         proba = exp_scores / exp_scores.sum(axis=1, keepdims=True)
         top_predictions = _top_k_from_proba(proba, model_pipeline.classes_, k=k)
     return ClassificationOutput(model_name=model_name, top_predictions=top_predictions)
+
+
+def generate_model_reasoning(
+    model_name: str,
+    top_prediction: TopPrediction,
+) -> ModelReasoning:
+    """Generate per-model reasoning text for feeding the core LLM."""
+    reasoning = (
+        f"{model_name} predicts {top_prediction.label} with confidence "
+        f"{top_prediction.confidence:.4f} based on the preprocessed features."
+    )
+    return ModelReasoning(
+        model_name=model_name,
+        prediction=top_prediction.label,
+        confidence=top_prediction.confidence,
+        reasoning=reasoning,
+    )
+
+
+def aggregate_with_core_llm(
+    core_llm: CoreLLM,
+    model_reasoning: Sequence[ModelReasoning],
+) -> AggregatedDecision:
+    """Aggregate model reasoning into a single decision (LLM-compatible stub)."""
+    if not model_reasoning:
+        return AggregatedDecision(
+            label="Unknown",
+            reasoning="No model outputs were provided for aggregation.",
+            model_reasoning=[],
+        )
+
+    votes = {}
+    for item in model_reasoning:
+        votes[item.prediction] = votes.get(item.prediction, 0) + 1
+
+    sorted_votes = sorted(votes.items(), key=lambda x: (-x[1], x[0]))
+    top_label, _ = sorted_votes[0]
+    reasoning_lines = [
+        f"Core LLM ({core_llm.value}) aggregated {len(model_reasoning)} model outputs.",
+        "Model reasoning summary:",
+    ]
+    reasoning_lines.extend(
+        f"- {item.model_name}: {item.reasoning}" for item in model_reasoning
+    )
+    reasoning_lines.append(f"Final decision (majority): {top_label}.")
+    return AggregatedDecision(
+        label=top_label,
+        reasoning="\n".join(reasoning_lines),
+        model_reasoning=list(model_reasoning),
+    )

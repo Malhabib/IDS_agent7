@@ -33,7 +33,8 @@ We consider three core LLMs:
 - Standardize extracted features.
 - Train all six models against the labeled dataset.
 - Save trained models for the framework to load later.
-- At inference, return the top-3 labels and confidence scores for each classifier.
+- For each sample, each ML classifier produces a top-3 label list and a per-model reasoning string
+  that is fed to the core LLM for aggregation.
 
 ## IDS-Agent Pipeline (ReAct-Inspired)
 The IDS-Agent pipeline follows a ReAct-style loop. The core LLM generates a sequence of actions `{a1, a2, ...}` based on prior reasoning and observations. For intrusion detection requests, the agent builds an initial observation `o0` by concatenating the user request with a system prompt that includes a description of each available tool. This initial observation provides the context the agent uses for subsequent reasoning and action generation.
@@ -81,6 +82,9 @@ Binary classification metrics:
 Multi-classification metrics:
 - Per-class precision, recall, and F1-score for each attack category (plus benign).
 - Macro-averaged precision, recall, and F1-score computed by averaging each metric over all classes with equal weights.
+
+Evaluation should run sample-by-sample over the CSV dataset, aggregating each classifier output
+through the core LLM before computing metrics.
 
 ## Flowchart (Framework Overview)
 ```mermaid
