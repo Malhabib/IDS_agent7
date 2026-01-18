@@ -72,3 +72,16 @@ Binary classification metrics:
 Multi-classification metrics:
 - Per-class precision, recall, and F1-score for each attack category (plus benign).
 - Macro-averaged precision, recall, and F1-score computed by averaging each metric over all classes with equal weights.
+
+## Flowchart (Framework Overview)
+```mermaid
+flowchart TD
+    A[User Request + Traffic Flow] --> B[Initial Observation o0\n(User Request + System Prompt + Tool Descriptions)]
+    B --> C[Reasoning ri = LLM(si)]
+    C --> D[Action Generation ai = LLM(ri, si)\n(Structured JSON action + tool inputs)]
+    D --> E[Tool Execution\nData Extraction / Preprocessing / Classification / Retrieval]
+    E --> F[Observation Update oi\n(Tool outputs to plain text)]
+    F --> G{Final Answer?}
+    G -- No --> C
+    G -- Yes --> H[Final Output\nHeadline + JSON prediction + explanation]
+```
