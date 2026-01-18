@@ -24,11 +24,17 @@ from src.ids_agent import (
 )
 
 
-def compute_binary_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
+def compute_binary_metrics(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    *,
+    benign_label: str = "0",
+    malicious_label: str = "1",
+) -> dict[str, float]:
     correct = (y_true == y_pred).sum()
     accuracy = float(correct / len(y_true)) if len(y_true) else 0.0
-    benign_mask = y_true == 0
-    false_positives = int(((y_pred == 1) & benign_mask).sum())
+    benign_mask = y_true == benign_label
+    false_positives = int(((y_pred == malicious_label) & benign_mask).sum())
     total_benign = int(benign_mask.sum())
     far = float(false_positives / total_benign) if total_benign else 0.0
     return {"accuracy": accuracy, "far": far}
@@ -90,7 +96,7 @@ def evaluate_dataset(
         raise ValueError("Dataset must include a 'label' column.")
 
     models = load_models(models_dir)
-    y_true = df["label"].to_numpy()
+    y_true = df["label"].astype(str).to_numpy()
     predictions_by_llm: dict[CoreLLM, list[str]] = {
         CoreLLM.GPT_4O_MINI: [],
     }
