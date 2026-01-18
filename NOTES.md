@@ -47,6 +47,10 @@ Specifically, IDS-Agent iterates over the following three steps:
 
 The iterations terminate when the observation is updated by a ‘final answer’ headline followed by a JSON file. This JSON file, which encapsulates the final prediction on the traffic data and related analysis and explanation, will be the output of IDS-Agent.
 
+Implementation note: the `run_react_loop` helpers in `src/ids_agent.py` mirror the three LLM steps
+(reasoning, action generation, observation update) and serve as a structured placeholder for
+integrating the core LLM into the IDS-Agent control flow.
+
 ### Action Space and Tool Design
 Our IDS-Agent is designed with a comprehensive action space, allowing it to handle various tasks in the pipeline of data processing and classification through iterative reasoning and execution. The action space includes the key actions described below.
 

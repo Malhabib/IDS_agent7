@@ -50,6 +50,19 @@ class KnowledgeRetrievalResult:
     snippets: List[KnowledgeSnippet]
 
 
+@dataclass(frozen=True)
+class ActionStep:
+    name: str
+    tool: str
+    parameters: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class Observation:
+    headline: str
+    content: str
+
+
 def drop_irrelevant_fields(
     frame: pd.DataFrame,
     *,
@@ -237,3 +250,52 @@ def aggregate_with_core_llm(
         reasoning="\n".join(reasoning_lines),
         model_reasoning=list(model_reasoning),
     )
+
+
+def build_initial_observation(
+    user_request: str,
+    tool_descriptions: Sequence[str],
+) -> Observation:
+    content = "\n".join([user_request, *tool_descriptions])
+    return Observation(headline="initial observation", content=content)
+
+
+def llm_reasoning(core_llm: CoreLLM, short_term_memory: Sequence[str]) -> str:
+    """Stub for LLM reasoning over short-term memory."""
+    memory_preview = " | ".join(short_term_memory[-3:])
+    return f"{core_llm.value} reasoning over memory: {memory_preview}"
+
+
+def llm_action_generation(reasoning: str, short_term_memory: Sequence[str]) -> ActionStep:
+    """Stub for structured JSON action generation."""
+    return ActionStep(
+        name="Classification",
+        tool="classification_tool",
+        parameters={"reasoning": reasoning, "memory_size": len(short_term_memory)},
+    )
+
+
+def update_observation(action: ActionStep, tool_output: str) -> Observation:
+    return Observation(
+        headline=f"observation after {action.name}",
+        content=tool_output,
+    )
+
+
+def run_react_loop(
+    core_llm: CoreLLM,
+    user_request: str,
+    tool_descriptions: Sequence[str],
+    tool_output: str,
+    *,
+    max_steps: int = 1,
+) -> Observation:
+    """Run a minimal ReAct-style loop and return the final observation."""
+    observation = build_initial_observation(user_request, tool_descriptions)
+    short_term_memory = [observation.content]
+    for _ in range(max_steps):
+        reasoning = llm_reasoning(core_llm, short_term_memory)
+        action = llm_action_generation(reasoning, short_term_memory)
+        observation = update_observation(action, tool_output)
+        short_term_memory.append(f"{reasoning} -> {action.name} -> {observation.content}")
+    return observation
