@@ -18,9 +18,12 @@ from src.ids_agent import (
     CoreLLM,
     ModelReasoning,
     aggregate_with_core_llm,
+    build_lime_explainer,
     classify_sample,
     generate_model_reasoning,
+    lime_explain_prediction,
     retrieve_knowledge,
+    split_feature_columns,
 )
 
 
@@ -97,6 +100,17 @@ def evaluate_dataset(
 
     models = load_models(models_dir)
     y_true = df["label"].astype(str).to_numpy()
+    feature_frame = df.drop(columns=["label"])
+    numeric_columns, categorical_columns = split_feature_columns(feature_frame)
+    categorical_indices = [
+        feature_frame.columns.get_loc(col) for col in categorical_columns
+    ]
+    categorical_names = {
+        feature_frame.columns.get_loc(col): sorted(
+            feature_frame[col].dropna().astype(str).unique().tolist()
+        )
+        for col in categorical_columns
+    }
     predictions_by_llm: dict[CoreLLM, list[str]] = {
         CoreLLM.GPT_4O_MINI: [],
     }
@@ -110,6 +124,16 @@ def evaluate_dataset(
     }
     majority_predictions: list[str] = []
 
+    explainers = {
+        model_name: build_lime_explainer(
+            feature_frame,
+            class_names=[str(cls) for cls in model_pipeline.classes_],
+            categorical_features=categorical_indices,
+            categorical_names=categorical_names,
+        )
+        for model_name, model_pipeline in models.items()
+    }
+
     for _, row in df.iterrows():
         sample = row.drop(labels=["label"]).to_dict()
         per_model_predictions: list[str] = []
@@ -118,8 +142,17 @@ def evaluate_dataset(
             output = classify_sample(model_name, model_pipeline, sample, k=3)
             top_prediction = output.top_predictions[0]
             per_model_predictions.append(top_prediction.label)
+            lime_explanation = lime_explain_prediction(
+                explainers[model_name],
+                model_pipeline,
+                sample,
+            )
             model_reasoning.append(
-                generate_model_reasoning(model_name, top_prediction)
+                generate_model_reasoning(
+                    model_name,
+                    top_prediction,
+                    lime_explanation=lime_explanation,
+                )
             )
             if model_name in model_predictions:
                 model_predictions[model_name].append(top_prediction.label)

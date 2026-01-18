@@ -7,6 +7,7 @@ from typing import Iterable, List, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
+from lime.lime_tabular import LimeTabularExplainer
 from sklearn.compose import ColumnTransformer
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.impute import SimpleImputer
@@ -29,6 +30,7 @@ class ModelReasoning:
     prediction: str
     confidence: float
     reasoning: str
+    lime_explanation: str | None = None
 
 
 @dataclass(frozen=True)
@@ -177,6 +179,7 @@ def classify_sample(
 def generate_model_reasoning(
     model_name: str,
     top_prediction: TopPrediction,
+    lime_explanation: str | None = None,
 ) -> ModelReasoning:
     """Generate per-model reasoning text for feeding the core LLM."""
     reasoning = (
@@ -188,7 +191,41 @@ def generate_model_reasoning(
         prediction=top_prediction.label,
         confidence=top_prediction.confidence,
         reasoning=reasoning,
+        lime_explanation=lime_explanation,
     )
+
+
+def build_lime_explainer(
+    training_frame: pd.DataFrame,
+    *,
+    class_names: Sequence[str],
+    categorical_features: Sequence[int],
+    categorical_names: dict[int, List[str]],
+) -> LimeTabularExplainer:
+    return LimeTabularExplainer(
+        training_data=training_frame.values,
+        feature_names=training_frame.columns.tolist(),
+        class_names=list(class_names),
+        categorical_features=categorical_features,
+        categorical_names=categorical_names,
+        discretize_continuous=True,
+    )
+
+
+def lime_explain_prediction(
+    explainer: LimeTabularExplainer,
+    model_pipeline,
+    sample: Mapping[str, object],
+    *,
+    num_features: int = 5,
+) -> str:
+    sample_frame = pd.DataFrame([sample])
+    explanation = explainer.explain_instance(
+        data_row=sample_frame.values[0],
+        predict_fn=model_pipeline.predict_proba,
+        num_features=num_features,
+    )
+    return "; ".join(f"{feature}={weight:.3f}" for feature, weight in explanation.as_list())
 
 
 def retrieve_knowledge(query: str) -> KnowledgeRetrievalResult:
@@ -202,7 +239,11 @@ def assemble_context(
     memory_context: Sequence[str],
 ) -> List[str]:
     context_lines = ["Model reasoning:"]
-    context_lines.extend(f"- {item.model_name}: {item.reasoning}" for item in model_reasoning)
+    for item in model_reasoning:
+        line = f"- {item.model_name}: {item.reasoning}"
+        if item.lime_explanation:
+            line += f" | LIME: {item.lime_explanation}"
+        context_lines.append(line)
     context_lines.append(f"Knowledge retrieval query: {knowledge.query}")
     if knowledge.snippets:
         context_lines.append("Knowledge snippets:")
