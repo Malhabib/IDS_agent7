@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import Iterable, List, Mapping, Sequence
 
 import numpy as np
@@ -15,6 +16,11 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 DEFAULT_LABEL_COLUMN = "label"
 DEFAULT_TIMESTAMP_COLUMNS = ("connectionTime", "disconnectTime", "timestamp")
 DEFAULT_FLOW_ID_COLUMNS = ("flow_id", "flowId", "flowID", "FlowID")
+
+class CoreLLM(str, Enum):
+    GPT_3_5_TURBO = "gpt-3.5-turbo"
+    GPT_4O_MINI = "gpt-4o-mini"
+    GPT_4O = "gpt-4o"
 
 
 def drop_irrelevant_fields(

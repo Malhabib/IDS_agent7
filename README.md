@@ -23,3 +23,9 @@ python scripts/train_models.py path/to/dataset.csv --output-dir models
 
 Models are persisted as `.joblib` files for inference use, and the classification tool returns
 top-3 label predictions with confidence scores per model.
+
+## Core LLM Options
+The core IDS-Agent LLM choices are:
+- GPT-3.5-Turbo
+- GPT-4o-mini
+- GPT-4o

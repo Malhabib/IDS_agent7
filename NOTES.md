@@ -20,6 +20,12 @@ Train and persist six models so they are ready for inference:
 - Multi-Layer Perceptron (MLP)
 - Support Vector Classifier (SVC)
 
+## Core LLM Choices
+We consider three core LLMs:
+- GPT-3.5-Turbo
+- GPT-4o-mini
+- GPT-4o
+
 ## Training/Inference Expectations
 - Remove irrelevant fields (label, timestamps, flow ID).
 - Encode non-numerical fields.
