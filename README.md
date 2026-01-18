@@ -14,7 +14,9 @@ Indicators:
 
 ## Model Training
 Train six classifiers (RF, KNN, LR, DT, MLP, SVC) using a labeled CSV dataset that includes:
-`connectionTime`, `disconnectTime`, `RequestedDemand`, `kWhDelivered`, and `label`.
+`connectionTime`, `disconnectTime`, `RequestedDemand`, `kWhDelivered`, and `label`. Timestamp columns
+may be ISO-8601 strings like `2019-04-25 23:23:33+0000`; the training script converts them to epoch
+seconds before model training.
 
 Example:
 ```bash

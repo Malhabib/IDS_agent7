@@ -56,6 +56,11 @@ def train_models(dataset_path: Path, output_dir: Path) -> None:
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
 
+    df["connectionTime"] = pd.to_datetime(df["connectionTime"], utc=True, errors="coerce")
+    df["disconnectTime"] = pd.to_datetime(df["disconnectTime"], utc=True, errors="coerce")
+    df["connectionTime"] = df["connectionTime"].astype("int64") / 1e9
+    df["disconnectTime"] = df["disconnectTime"].astype("int64") / 1e9
+
     X = df[FEATURE_COLUMNS]
     y = df[LABEL_COLUMN]
 

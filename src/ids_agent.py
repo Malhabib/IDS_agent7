@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Dict, Tuple
 
 
@@ -9,15 +10,16 @@ from typing import Dict, Tuple
 class SessionFeatures:
     """Normalized EV charging session inputs."""
 
-    connection_time: float
-    disconnect_time: float
+    connection_time: datetime
+    disconnect_time: datetime
     requested_demand: float
     kwh_delivered: float
 
     @property
     def idle_time(self) -> float:
-        """Idle time after charging (disconnect - connection)."""
-        return max(0.0, self.disconnect_time - self.connection_time)
+        """Idle time after charging in minutes (disconnect - connection)."""
+        delta = self.disconnect_time - self.connection_time
+        return max(0.0, delta.total_seconds() / 60.0)
 
     @property
     def efficiency(self) -> float:
@@ -90,11 +92,19 @@ def classify_session(features: SessionFeatures) -> DetectionResult:
     )
 
 
-def parse_features(payload: Dict[str, float]) -> SessionFeatures:
+def _parse_timestamp(value: float | str) -> datetime:
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value))
+    return datetime.strptime(str(value), "%Y-%m-%d %H:%M:%S%z")
+
+
+def parse_features(payload: Dict[str, float | str]) -> SessionFeatures:
     """Parse raw payload into SessionFeatures."""
     return SessionFeatures(
-        connection_time=float(payload["connectionTime"]),
-        disconnect_time=float(payload["disconnectTime"]),
+        connection_time=_parse_timestamp(payload["connectionTime"]),
+        disconnect_time=_parse_timestamp(payload["disconnectTime"]),
         requested_demand=float(payload["RequestedDemand"]),
         kwh_delivered=float(payload["kWhDelivered"]),
     )
