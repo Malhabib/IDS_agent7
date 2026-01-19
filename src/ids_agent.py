@@ -242,7 +242,11 @@ def shap_explain_prediction(
 ) -> str:
     sample_row = sample_row.toarray().ravel() if hasattr(sample_row, "toarray") else sample_row
     background = background.toarray() if hasattr(background, "toarray") else background
-    explainer = shap.KernelExplainer(predict_fn, background)
+    background = np.asarray(background)
+    if background.ndim == 1:
+        background = background.reshape(1, -1)
+    background_sample = shap.sample(background, min(50, background.shape[0]))
+    explainer = shap.KernelExplainer(lambda x: predict_fn(x), background_sample)
     shap_values = explainer.shap_values(sample_row.reshape(1, -1), nsamples=50)
     if isinstance(shap_values, list):
         values = np.abs(shap_values[0][0])
