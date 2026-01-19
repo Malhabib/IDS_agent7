@@ -276,18 +276,15 @@ def aggregate_with_core_llm(
             model_reasoning=[],
         )
 
-    votes = {}
-    for item in model_reasoning:
-        votes[item.prediction] = votes.get(item.prediction, 0) + 1
-
-    sorted_votes = sorted(votes.items(), key=lambda x: (-x[1], x[0]))
-    top_label, _ = sorted_votes[0]
+    model_labels = [item.prediction for item in model_reasoning]
+    top_label = majority_vote_predictions(model_labels)
     knowledge = knowledge or retrieve_knowledge("no-query")
     memory_context = memory_context or []
     context_lines = assemble_context(model_reasoning, knowledge, memory_context)
+    context_lines.append(f"Majority vote label: {top_label}")
     system_prompt = (
-        "You are IDS-Agent. Aggregate model reasoning, LIME explanations, and knowledge context "
-        "to produce a final label and short explanation. Respond with JSON containing keys "
+        "You are IDS-Agent. Use majority voting across the six ML models as the ensemble baseline, "
+        "then write a short reasoning summary and final label. Respond with JSON containing keys "
         "`label` and `explanation`."
     )
     user_prompt = "\n".join(context_lines)

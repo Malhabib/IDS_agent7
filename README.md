@@ -52,6 +52,10 @@ plus multi-class precision/recall/F1 with macro-averaged values. Use `--trace-li
 iterative LLM-style reasoning/action/observation trace for a specific CSV line. The script will
 also call GPT-4o to render the trace using the core LLM.
 
+Each CSV row is evaluated as a separate request; the core LLM receives per-model predictions with
+confidence scores, applies the majority-vote ensemble baseline, and returns a final label plus
+explanation.
+
 The IDS-Agent classification flow is multi-level: per-model reasoning is generated (with LIME
 explanations), knowledge retrieval can be incorporated, and the core LLM aggregates across these
 levels.

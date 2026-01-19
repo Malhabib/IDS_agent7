@@ -39,6 +39,8 @@ API usage: `aggregate_with_core_llm` calls GPT-4o via the OpenAI API (requires `
 - For each sample, each ML classifier produces a top-3 label list and a per-model reasoning string
   with LIME explanations that is fed to the core LLM for aggregation, along with knowledge retrieval
   and (optionally) long-term memory context.
+- The core LLM receives the per-model predictions, applies a majority-vote ensemble baseline, then
+  emits the final label and explanation for each request (row).
 
 ## IDS-Agent Pipeline (ReAct-Inspired)
 The IDS-Agent pipeline follows a ReAct-style loop. The core LLM generates a sequence of actions `{a1, a2, ...}` based on prior reasoning and observations. For intrusion detection requests, the agent builds an initial observation `o0` by concatenating the user request with a system prompt that includes a description of each available tool. This initial observation provides the context the agent uses for subsequent reasoning and action generation.
