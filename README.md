@@ -39,6 +39,16 @@ Set your API key before running evaluation so the core LLM aggregation uses GPT-
 export OPENAI_API_KEY="your_api_key_here"
 ```
 
+## Ollama (Local LLM)
+If you have Ollama running locally, point the framework at it:
+
+```bash
+export OLLAMA_BASE_URL="http://localhost:11434/v1"
+export OLLAMA_MODEL="llama3.2"
+```
+
+This switches the core LLM calls to your local Ollama server.
+
 ## Evaluation (Sample-by-Sample)
 Run evaluation across the CSV dataset while generating per-model reasoning and aggregating via the
 core LLM:

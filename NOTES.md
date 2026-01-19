@@ -28,6 +28,7 @@ We consider three core LLMs:
 
 Default core LLM: GPT-4o (used by aggregation and evaluation).
 API usage: `aggregate_with_core_llm` calls GPT-4o via the OpenAI API (requires `OPENAI_API_KEY`).
+For local LLMs, set `OLLAMA_BASE_URL` and `OLLAMA_MODEL` to use Ollama.
 
 ## Training/Inference Expectations
 - Remove irrelevant fields (label, timestamps, flow ID).

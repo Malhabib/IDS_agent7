@@ -28,6 +28,7 @@ class CoreLLM(str, Enum):
 
 
 DEFAULT_CORE_LLM = CoreLLM.GPT_4O
+DEFAULT_OLLAMA_MODEL = "llama3.2"
 
 GENERAL_LLM_PROMPT_TEMPLATE = (
     "You are a helpful assistant that can implement multi-step tasks, such as intrusion detection. "
@@ -59,6 +60,19 @@ GENERAL_LLM_PROMPT_TEMPLATE = (
 
 def build_general_llm_prompt(model_names: Sequence[str]) -> str:
     return GENERAL_LLM_PROMPT_TEMPLATE.format(model_names=list(model_names))
+
+
+def create_llm_client() -> tuple[OpenAI, str]:
+    """Create an OpenAI-compatible client (OpenAI or Ollama)."""
+    ollama_url = os.getenv("OLLAMA_BASE_URL")
+    ollama_model = os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+    if ollama_url:
+        return OpenAI(base_url=ollama_url, api_key="ollama"), ollama_model
+    if not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError(
+            "Missing OPENAI_API_KEY. Set it before running GPT-4o aggregation."
+        )
+    return OpenAI(), DEFAULT_CORE_LLM.value
 
 
 @dataclass(frozen=True)
@@ -316,13 +330,9 @@ def aggregate_with_core_llm(
         "Respond with JSON containing keys `label` and `explanation`."
     )
     user_prompt = "\n".join(context_lines)
-    if not os.getenv("OPENAI_API_KEY"):
-        raise RuntimeError(
-            "Missing OPENAI_API_KEY. Set it before running GPT-4o aggregation."
-        )
-    client = OpenAI()
+    client, model_name = create_llm_client()
     response = client.chat.completions.create(
-        model=core_llm.value,
+        model=model_name,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -460,9 +470,9 @@ def generate_iterative_trace_with_llm(
         "same style as the provided template, filling in values consistently."
     )
     user_prompt = "\n".join(template_lines)
-    client = OpenAI()
+    client, model_name = create_llm_client()
     response = client.chat.completions.create(
-        model=core_llm.value,
+        model=model_name,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
@@ -494,9 +504,9 @@ def generate_stepwise_llm_response(
         f"Preprocessed features: {list(preprocessed_features)}\n"
         f"Model outputs:\n- " + "\n- ".join(model_lines)
     )
-    client = OpenAI()
+    client, model_name = create_llm_client()
     response = client.chat.completions.create(
-        model=core_llm.value,
+        model=model_name,
         messages=[
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
