@@ -262,8 +262,8 @@ def assemble_context(
 
 
 def aggregate_with_core_llm(
-    core_llm: CoreLLM = DEFAULT_CORE_LLM,
     model_reasoning: Sequence[ModelReasoning],
+    core_llm: CoreLLM = DEFAULT_CORE_LLM,
     *,
     knowledge: KnowledgeRetrievalResult | None = None,
     memory_context: Sequence[str] | None = None,
@@ -349,12 +349,12 @@ def update_observation(action: ActionStep, tool_output: str) -> Observation:
 
 
 def run_react_loop(
-    core_llm: CoreLLM = DEFAULT_CORE_LLM,
     user_request: str,
     tool_descriptions: Sequence[str],
     tool_output: str,
     *,
     max_steps: int = 1,
+    core_llm: CoreLLM = DEFAULT_CORE_LLM,
 ) -> Observation:
     """Run a minimal ReAct-style loop and return the final observation."""
     observation = build_initial_observation(user_request, tool_descriptions)

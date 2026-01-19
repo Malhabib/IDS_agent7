@@ -166,8 +166,8 @@ def evaluate_dataset(
         knowledge = retrieve_knowledge(query)
         majority_predictions.append(majority_vote(per_model_predictions))
         aggregated = aggregate_with_core_llm(
-            DEFAULT_CORE_LLM,
             model_reasoning,
+            core_llm=DEFAULT_CORE_LLM,
             knowledge=knowledge,
             memory_context=[],
         )
