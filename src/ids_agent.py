@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from enum import Enum
 from typing import Iterable, List, Mapping, Sequence
 
@@ -315,6 +316,10 @@ def aggregate_with_core_llm(
         "Respond with JSON containing keys `label` and `explanation`."
     )
     user_prompt = "\n".join(context_lines)
+    if not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError(
+            "Missing OPENAI_API_KEY. Set it before running GPT-4o aggregation."
+        )
     client = OpenAI()
     response = client.chat.completions.create(
         model=core_llm.value,
