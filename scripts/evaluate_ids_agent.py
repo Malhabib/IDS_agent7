@@ -98,6 +98,7 @@ def evaluate_dataset(
     models_dir: Path,
     *,
     trace_line: int | None = None,
+    show_samples: bool = True,
 ) -> None:
     df = pd.read_csv(dataset_path)
     if "label" not in df.columns:
@@ -160,6 +161,17 @@ def evaluate_dataset(
             memory_context=[],
         )
         predictions_by_llm[DEFAULT_CORE_LLM].append(aggregated.label)
+        if show_samples:
+            print(f"\nSample {row_index + 1}:")
+            for item in model_reasoning:
+                print(
+                    f"- {item.model_name}: {item.prediction} ({item.confidence:.3f}) | "
+                    f"SHAP: {item.explanation}"
+                )
+            print(f"- Majority Vote: {majority_predictions[-1]}")
+            print(
+                f"- IDS-Agent (LLM): {aggregated.label} | Explanation: {aggregated.reasoning}"
+            )
         if trace_line is not None and row_index + 1 == trace_line:
             sample_frame = pd.DataFrame([sample])
             preprocessed = rf_preprocessor.transform(sample_frame)[0].tolist()
@@ -232,8 +244,18 @@ def main() -> None:
         default=None,
         help="Optional line number to print the iterative LLM trace for.",
     )
+    parser.add_argument(
+        "--show-samples",
+        action="store_true",
+        help="Print per-sample model predictions, SHAP explanations, and LLM output.",
+    )
     args = parser.parse_args()
-    evaluate_dataset(args.dataset, args.models_dir, trace_line=args.trace_line)
+    evaluate_dataset(
+        args.dataset,
+        args.models_dir,
+        trace_line=args.trace_line,
+        show_samples=args.show_samples,
+    )
 
 
 if __name__ == "__main__":

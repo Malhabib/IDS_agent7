@@ -41,6 +41,8 @@ API usage: `aggregate_with_core_llm` calls GPT-4o via the OpenAI API (requires `
   and (optionally) long-term memory context.
 - The core LLM receives the per-model predictions, applies a majority-vote ensemble baseline, then
   emits the final label and explanation for each request (row).
+- The evaluation can print per-sample outputs (model prediction + confidence + SHAP, majority vote,
+  and IDS-Agent LLM output) for inspection.
 - The evaluation trace can invoke the core LLM to emit the full step-by-step response using the
   general prompt, including data extraction, preprocessing, multi-model classification, knowledge
   retrieval, LTM retrieval, aggregation, and final explanation/trace.

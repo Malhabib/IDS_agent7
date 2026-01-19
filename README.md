@@ -44,13 +44,16 @@ Run evaluation across the CSV dataset while generating per-model reasoning and a
 core LLM:
 
 ```bash
-python scripts/evaluate_ids_agent.py path/to/dataset.csv --models-dir models --trace-line 1
+python scripts/evaluate_ids_agent.py path/to/dataset.csv --models-dir models --trace-line 1 --show-samples
 ```
 
 The evaluation prints a binary-metrics table (RF, LR, KNN, MLP, DT, SVC, Majority Vote, IDS-Agent)
 plus multi-class precision/recall/F1 with macro-averaged values. Use `--trace-line` to print the
 iterative LLM-style reasoning/action/observation trace for a specific CSV line. The script will
 also call GPT-4o to render the trace using the core LLM.
+
+Use `--show-samples` to print per-sample outputs (each model prediction + confidence + SHAP, majority
+vote, and the IDS-Agent LLM label/explanation).
 
 When `--trace-line` is set, the script also asks GPT-4o to emit the full step-by-step response
 following the general prompt (data extraction → preprocessing → multi-model classification → knowledge
