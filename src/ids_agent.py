@@ -379,12 +379,12 @@ def build_iterative_trace(
         f"{line_number:03d}. I will start by loading the traffic features from the CSV file.",
         "Action: load_data_line",
         f'Action Input: {{"line_number": {line_number}}}',
-        "Observation: request \"sessionID\" ???",
+        "Observation: request “sessionID” ?????",
         "Thought: I have successfully loaded the traffic features from line number "
         f"{line_number:03d}. Now, I will proceed to preprocess the loaded traffic features to "
         "prepare them for classification.",
         "Action: data_preprocessing",
-        f'Action Input: {{"traffic_features": "connectionTime:{raw_features.get("connectionTime")}, '
+        f'Action Input: {{"traffic_features": " connectionTime:{raw_features.get("connectionTime")}, '
         f'disconnectTime:{raw_features.get("disconnectTime")}, '
         f'RequestedDemand:{raw_features.get("RequestedDemand")}, '
         f'kWhDelivered:{raw_features.get("kWhDelivered")}"}}',
@@ -400,7 +400,7 @@ def build_iterative_trace(
         trace.extend(
             [
                 "Action: classifier",
-                f'Action Input: {{"modelname": "{output.model_name}"}}',
+                f'Action Input: {{"modelname": "{output.model_name}", ?????}}',
                 f"Observation: Top predictions: {top_labels}",
                 "Thought: I have obtained the classification results from the "
                 f"{output.model_name} model. Now, I will classify the same preprocessed features "
