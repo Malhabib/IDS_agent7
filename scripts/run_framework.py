@@ -44,6 +44,7 @@ def run_framework(dataset_path: Path, models_dir: Path, *, line_number: int) -> 
     rf_preprocessor = models["rf"].named_steps["preprocessing"]
     sample_frame = pd.DataFrame([sample])
     preprocessed = rf_preprocessor.transform(sample_frame)[0]
+    background = rf_preprocessor.transform(df.drop(columns=["label"]))
     feature_count = preprocessed.shape[1] if hasattr(preprocessed, "shape") else len(preprocessed)
     feature_names = [f"f{idx}" for idx in range(feature_count)]
 
@@ -54,8 +55,9 @@ def run_framework(dataset_path: Path, models_dir: Path, *, line_number: int) -> 
         model_outputs.append(output)
         top_prediction = output.top_predictions[0]
         shap_explanation = shap_explain_prediction(
-            model_pipeline.named_steps["model"],
+            model_pipeline.predict_proba,
             preprocessed,
+            background,
             feature_names,
         )
         model_reasoning.append(

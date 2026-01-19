@@ -233,16 +233,21 @@ def generate_model_reasoning(
 
 
 def shap_explain_prediction(
-    model,
+    predict_fn,
     sample_row: np.ndarray,
+    background: np.ndarray,
     feature_names: Sequence[str],
     *,
     top_k: int = 5,
 ) -> str:
-    explainer = shap.Explainer(model)
     sample_row = sample_row.toarray().ravel() if hasattr(sample_row, "toarray") else sample_row
-    shap_values = explainer(sample_row.reshape(1, -1))
-    values = np.abs(shap_values.values[0])
+    background = background.toarray() if hasattr(background, "toarray") else background
+    explainer = shap.KernelExplainer(predict_fn, background)
+    shap_values = explainer.shap_values(sample_row.reshape(1, -1), nsamples=50)
+    if isinstance(shap_values, list):
+        values = np.abs(shap_values[0][0])
+    else:
+        values = np.abs(shap_values[0])
     if values.ndim > 1:
         values = values.max(axis=0)
     top_indices = np.argsort(values)[::-1][:top_k]
