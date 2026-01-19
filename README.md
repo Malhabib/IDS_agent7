@@ -48,6 +48,8 @@ export OLLAMA_MODEL="llama3.2"
 ```
 
 This switches the core LLM calls to your local Ollama server.
+If you see `model 'llama3.2' not found`, run `ollama pull llama3.2` (or set `OLLAMA_MODEL` to the
+exact name shown in `ollama list`).
 
 ## Evaluation (Sample-by-Sample)
 Run evaluation across the CSV dataset while generating per-model reasoning and aggregating via the

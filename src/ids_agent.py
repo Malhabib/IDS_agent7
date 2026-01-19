@@ -75,6 +75,30 @@ def create_llm_client() -> tuple[OpenAI, str]:
     return OpenAI(), DEFAULT_CORE_LLM.value
 
 
+def call_llm(
+    client: OpenAI,
+    model_name: str,
+    messages: list[dict[str, str]],
+    *,
+    temperature: float,
+    response_format: dict[str, str] | None = None,
+):
+    try:
+        payload = dict(
+            model=model_name,
+            messages=messages,
+            temperature=temperature,
+        )
+        if response_format:
+            payload["response_format"] = response_format
+        return client.chat.completions.create(**payload)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"LLM call failed for model '{model_name}'. If using Ollama, ensure the model "
+            "is pulled and the name matches `ollama list`."
+        ) from exc
+
+
 @dataclass(frozen=True)
 class ModelReasoning:
     model_name: str
@@ -331,14 +355,15 @@ def aggregate_with_core_llm(
     )
     user_prompt = "\n".join(context_lines)
     client, model_name = create_llm_client()
-    response = client.chat.completions.create(
-        model=model_name,
-        messages=[
+    response = call_llm(
+        client,
+        model_name,
+        [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
         temperature=0.2,
-        response_format={"type": "json_object"},
+        response_format=None if os.getenv("OLLAMA_BASE_URL") else {"type": "json_object"},
     )
     content = response.choices[0].message.content or ""
     label = top_label
@@ -471,9 +496,10 @@ def generate_iterative_trace_with_llm(
     )
     user_prompt = "\n".join(template_lines)
     client, model_name = create_llm_client()
-    response = client.chat.completions.create(
-        model=model_name,
-        messages=[
+    response = call_llm(
+        client,
+        model_name,
+        [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
@@ -505,9 +531,10 @@ def generate_stepwise_llm_response(
         f"Model outputs:\n- " + "\n- ".join(model_lines)
     )
     client, model_name = create_llm_client()
-    response = client.chat.completions.create(
-        model=model_name,
-        messages=[
+    response = call_llm(
+        client,
+        model_name,
+        [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
