@@ -51,6 +51,9 @@ Implementation note: the `run_react_loop` helpers in `src/ids_agent.py` mirror t
 (reasoning, action generation, observation update) and serve as a structured placeholder for
 integrating the core LLM into the IDS-Agent control flow.
 
+The evaluation script can emit an iterative trace that mirrors the required Thought/Action/Observation
+sequence for a specific CSV line (via `--trace-line`).
+
 ### Action Space and Tool Design
 Our IDS-Agent is designed with a comprehensive action space, allowing it to handle various tasks in the pipeline of data processing and classification through iterative reasoning and execution. The action space includes the key actions described below.
 

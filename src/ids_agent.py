@@ -340,3 +340,43 @@ def run_react_loop(
         observation = update_observation(action, tool_output)
         short_term_memory.append(f"{reasoning} -> {action.name} -> {observation.content}")
     return observation
+
+
+def build_iterative_trace(
+    line_number: int,
+    raw_features: Mapping[str, object],
+    preprocessed_features: Sequence[float],
+    model_outputs: Sequence[ClassificationOutput],
+) -> List[str]:
+    """Construct an iterative LLM-style trace for classification."""
+    trace = [
+        "Thought: I need to follow the plan to classify the traffic features from line number "
+        f"{line_number:03d}. I will start by loading the traffic features from the CSV file.",
+        "Action: load_data_line",
+        f'Action Input: {{"line_number": {line_number}}}',
+        "Observation: request 'sessionID'",
+        "Thought: I have successfully loaded the traffic features from line number "
+        f"{line_number:03d}. Now, I will proceed to preprocess the loaded traffic features to "
+        "prepare them for classification.",
+        "Action: data_preprocessing",
+        f'Action Input: {{"traffic_features": "{raw_features}"}}',
+        f"Observation: {list(preprocessed_features)}",
+        "Thought: I have successfully preprocessed the traffic features. Now, I will proceed to "
+        "classify the preprocessed features using multiple classifiers to determine if the "
+        "traffic record is an attack.",
+    ]
+    for output in model_outputs:
+        top_labels = [
+            f"{pred.label} ({pred.confidence:.3f})" for pred in output.top_predictions
+        ]
+        trace.extend(
+            [
+                "Action: classifier",
+                f'Action Input: {{"modelname": "{output.model_name}"}}',
+                f"Observation: Top predictions: {top_labels}",
+                "Thought: I have obtained the classification results from the "
+                f"{output.model_name} model. Now, I will classify the same preprocessed features "
+                "using additional classifiers to gather more predictions.",
+            ]
+        )
+    return trace

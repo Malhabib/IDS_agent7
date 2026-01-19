@@ -19,6 +19,7 @@ from src.ids_agent import (
     ModelReasoning,
     aggregate_with_core_llm,
     build_lime_explainer,
+    build_iterative_trace,
     classify_sample,
     generate_model_reasoning,
     lime_explain_prediction,
@@ -93,6 +94,8 @@ def load_models(models_dir: Path) -> dict[str, object]:
 def evaluate_dataset(
     dataset_path: Path,
     models_dir: Path,
+    *,
+    trace_line: int | None = None,
 ) -> None:
     df = pd.read_csv(dataset_path)
     if "label" not in df.columns:
@@ -134,12 +137,14 @@ def evaluate_dataset(
         for model_name, model_pipeline in models.items()
     }
 
-    for _, row in df.iterrows():
+    for row_index, row in df.iterrows():
         sample = row.drop(labels=["label"]).to_dict()
         per_model_predictions: list[str] = []
         model_reasoning: list[ModelReasoning] = []
+        model_outputs = []
         for model_name, model_pipeline in models.items():
             output = classify_sample(model_name, model_pipeline, sample, k=3)
+            model_outputs.append(output)
             top_prediction = output.top_predictions[0]
             per_model_predictions.append(top_prediction.label)
             lime_explanation = lime_explain_prediction(
@@ -166,6 +171,19 @@ def evaluate_dataset(
             memory_context=[],
         )
         predictions_by_llm[CoreLLM.GPT_4O_MINI].append(aggregated.label)
+        if trace_line is not None and row_index + 1 == trace_line:
+            sample_frame = pd.DataFrame([sample])
+            preprocessed = models["rf"].named_steps["preprocessing"].transform(sample_frame)[
+                0
+            ].tolist()
+            trace = build_iterative_trace(
+                line_number=trace_line,
+                raw_features=sample,
+                preprocessed_features=preprocessed,
+                model_outputs=model_outputs,
+            )
+            print("Iterative LLM trace:")
+            print("\n".join(trace))
 
     results = {
         "RF": compute_binary_metrics(y_true, np.array(model_predictions["rf"])),
@@ -197,8 +215,14 @@ def main() -> None:
     parser.add_argument(
         "--models-dir", type=Path, default=Path("models"), help="Directory with .joblib models"
     )
+    parser.add_argument(
+        "--trace-line",
+        type=int,
+        default=None,
+        help="Optional line number to print the iterative LLM trace for.",
+    )
     args = parser.parse_args()
-    evaluate_dataset(args.dataset, args.models_dir)
+    evaluate_dataset(args.dataset, args.models_dir, trace_line=args.trace_line)
 
 
 if __name__ == "__main__":
