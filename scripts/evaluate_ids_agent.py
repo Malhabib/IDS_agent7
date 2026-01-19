@@ -19,13 +19,13 @@ from src.ids_agent import (
     DEFAULT_CORE_LLM,
     ModelReasoning,
     aggregate_with_core_llm,
-    build_lime_explainer,
     build_iterative_trace,
     classify_sample,
     generate_iterative_trace_with_llm,
     generate_model_reasoning,
-    lime_explain_prediction,
+    generate_stepwise_llm_response,
     retrieve_knowledge,
+    shap_explain_prediction,
     split_feature_columns,
 )
 
@@ -122,17 +122,7 @@ def evaluate_dataset(
 
     rf_preprocessor = models["rf"].named_steps["preprocessing"]
     preprocessed_matrix = rf_preprocessor.transform(feature_frame)
-    feature_names = [
-        f"f{idx}" for idx in range(preprocessed_matrix.shape[1])
-    ]
-    explainers = {
-        model_name: build_lime_explainer(
-            preprocessed_matrix,
-            feature_names=feature_names,
-            class_names=[str(cls) for cls in model_pipeline.classes_],
-        )
-        for model_name, model_pipeline in models.items()
-    }
+    feature_names = [f"f{idx}" for idx in range(preprocessed_matrix.shape[1])]
 
     for row_index, row in df.iterrows():
         sample = row.drop(labels=["label"]).to_dict()
@@ -146,16 +136,18 @@ def evaluate_dataset(
             per_model_predictions.append(top_prediction.label)
             sample_frame = pd.DataFrame([sample])
             sample_preprocessed = rf_preprocessor.transform(sample_frame)[0]
-            lime_explanation = lime_explain_prediction(
-                explainers[model_name],
-                model_pipeline.named_steps["model"].predict_proba,
-                sample_preprocessed,
-            )
+            shap_explanation = None
+            if trace_line is not None and row_index + 1 == trace_line:
+                shap_explanation = shap_explain_prediction(
+                    model_pipeline.named_steps["model"],
+                    sample_preprocessed,
+                    feature_names,
+                )
             model_reasoning.append(
                 generate_model_reasoning(
                     model_name,
                     top_prediction,
-                    lime_explanation=lime_explanation,
+                    explanation=shap_explanation,
                 )
             )
             if model_name in model_predictions:
@@ -190,6 +182,17 @@ def evaluate_dataset(
             )
             print("\nIterative LLM trace (GPT-4o):")
             print(llm_trace)
+            llm_stepwise = generate_stepwise_llm_response(
+                model_names=list(models.keys()),
+                line_number=trace_line,
+                raw_features=sample,
+                preprocessed_features=preprocessed,
+                model_outputs=model_outputs,
+                model_reasoning=model_reasoning,
+                core_llm=DEFAULT_CORE_LLM,
+            )
+            print("\nStepwise LLM response (GPT-4o):")
+            print(llm_stepwise)
 
     results = {
         "RF": compute_binary_metrics(y_true, np.array(model_predictions["rf"])),

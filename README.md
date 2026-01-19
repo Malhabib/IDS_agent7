@@ -52,6 +52,10 @@ plus multi-class precision/recall/F1 with macro-averaged values. Use `--trace-li
 iterative LLM-style reasoning/action/observation trace for a specific CSV line. The script will
 also call GPT-4o to render the trace using the core LLM.
 
+When `--trace-line` is set, the script also asks GPT-4o to emit the full step-by-step response
+following the general prompt (data extraction → preprocessing → multi-model classification → knowledge
+retrieval → LTM retrieval → aggregation → final explanation/trace).
+
 Each CSV row is evaluated as a separate request; the core LLM receives per-model predictions with
 confidence scores, applies the majority-vote ensemble baseline, and returns a final label plus
 explanation.

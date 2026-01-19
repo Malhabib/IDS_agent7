@@ -8,8 +8,8 @@ from typing import Iterable, List, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
-from lime.lime_tabular import LimeTabularExplainer
 from openai import OpenAI
+import shap
 from sklearn.compose import ColumnTransformer
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.impute import SimpleImputer
@@ -66,7 +66,7 @@ class ModelReasoning:
     prediction: str
     confidence: float
     reasoning: str
-    lime_explanation: str | None = None
+    explanation: str | None = None
 
 
 @dataclass(frozen=True)
@@ -215,7 +215,7 @@ def classify_sample(
 def generate_model_reasoning(
     model_name: str,
     top_prediction: TopPrediction,
-    lime_explanation: str | None = None,
+    explanation: str | None = None,
 ) -> ModelReasoning:
     """Generate per-model reasoning text for feeding the core LLM."""
     reasoning = (
@@ -227,37 +227,26 @@ def generate_model_reasoning(
         prediction=top_prediction.label,
         confidence=top_prediction.confidence,
         reasoning=reasoning,
-        lime_explanation=lime_explanation,
+        explanation=explanation,
     )
 
 
-def build_lime_explainer(
-    training_data: np.ndarray,
-    *,
-    feature_names: Sequence[str],
-    class_names: Sequence[str],
-) -> LimeTabularExplainer:
-    return LimeTabularExplainer(
-        training_data=training_data,
-        feature_names=list(feature_names),
-        class_names=list(class_names),
-        discretize_continuous=True,
-    )
-
-
-def lime_explain_prediction(
-    explainer: LimeTabularExplainer,
-    predict_fn,
+def shap_explain_prediction(
+    model,
     sample_row: np.ndarray,
+    feature_names: Sequence[str],
     *,
-    num_features: int = 5,
+    top_k: int = 5,
 ) -> str:
-    explanation = explainer.explain_instance(
-        data_row=sample_row,
-        predict_fn=predict_fn,
-        num_features=num_features,
+    explainer = shap.Explainer(model)
+    shap_values = explainer(sample_row.reshape(1, -1))
+    values = np.abs(shap_values.values[0])
+    if values.ndim > 1:
+        values = values.max(axis=0)
+    top_indices = np.argsort(values)[::-1][:top_k]
+    return "; ".join(
+        f"{feature_names[idx]}={values[idx]:.3f}" for idx in top_indices
     )
-    return "; ".join(f"{feature}={weight:.3f}" for feature, weight in explanation.as_list())
 
 
 def retrieve_knowledge(query: str) -> KnowledgeRetrievalResult:
@@ -273,8 +262,8 @@ def assemble_context(
     context_lines = ["Model reasoning:"]
     for item in model_reasoning:
         line = f"- {item.model_name}: {item.reasoning}"
-        if item.lime_explanation:
-            line += f" | LIME: {item.lime_explanation}"
+        if item.explanation:
+            line += f" | SHAP: {item.explanation}"
         context_lines.append(line)
     context_lines.append(f"Knowledge retrieval query: {knowledge.query}")
     if knowledge.snippets:
@@ -311,8 +300,8 @@ def aggregate_with_core_llm(
     context_lines.append(f"Majority vote label: {top_label}")
     system_prompt = (
         "You are IDS-Agent. Use majority voting across the six ML models as the ensemble baseline, "
-        "then write a short reasoning summary and final label. Respond with JSON containing keys "
-        "`label` and `explanation`."
+        "then write a short reasoning summary and final label using SHAP explanations as support. "
+        "Respond with JSON containing keys `label` and `explanation`."
     )
     user_prompt = "\n".join(context_lines)
     client = OpenAI()
@@ -454,6 +443,40 @@ def generate_iterative_trace_with_llm(
         "same style as the provided template, filling in values consistently."
     )
     user_prompt = "\n".join(template_lines)
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model=core_llm.value,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.0,
+    )
+    return response.choices[0].message.content or ""
+
+
+def generate_stepwise_llm_response(
+    model_names: Sequence[str],
+    line_number: int,
+    raw_features: Mapping[str, object],
+    preprocessed_features: Sequence[float],
+    model_outputs: Sequence[ClassificationOutput],
+    model_reasoning: Sequence[ModelReasoning],
+    *,
+    core_llm: CoreLLM = DEFAULT_CORE_LLM,
+) -> str:
+    """Ask the core LLM to emit the full stepwise Thought/Action/Observation response."""
+    system_prompt = build_general_llm_prompt(model_names)
+    model_lines = [
+        f"{item.model_name}: {item.prediction} ({item.confidence:.3f}) | SHAP: {item.explanation}"
+        for item in model_reasoning
+    ]
+    user_prompt = (
+        f"Line number: {line_number}\n"
+        f"Traffic features: {raw_features}\n"
+        f"Preprocessed features: {list(preprocessed_features)}\n"
+        f"Model outputs:\n- " + "\n- ".join(model_lines)
+    )
     client = OpenAI()
     response = client.chat.completions.create(
         model=core_llm.value,
