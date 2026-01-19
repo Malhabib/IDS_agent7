@@ -27,6 +27,7 @@ We consider three core LLMs:
 - GPT-4o
 
 Default core LLM: GPT-4o (used by aggregation and evaluation).
+API usage: `aggregate_with_core_llm` calls GPT-4o via the OpenAI API (requires `OPENAI_API_KEY`).
 
 ## Training/Inference Expectations
 - Remove irrelevant fields (label, timestamps, flow ID).

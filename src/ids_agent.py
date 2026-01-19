@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from enum import Enum
 from typing import Iterable, List, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
 from lime.lime_tabular import LimeTabularExplainer
+from openai import OpenAI
 from sklearn.compose import ColumnTransformer
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.impute import SimpleImputer
@@ -266,7 +268,7 @@ def aggregate_with_core_llm(
     knowledge: KnowledgeRetrievalResult | None = None,
     memory_context: Sequence[str] | None = None,
 ) -> AggregatedDecision:
-    """Aggregate model reasoning into a single decision (LLM-compatible stub)."""
+    """Aggregate model reasoning into a single decision using the core LLM."""
     if not model_reasoning:
         return AggregatedDecision(
             label="Unknown",
@@ -283,15 +285,35 @@ def aggregate_with_core_llm(
     knowledge = knowledge or retrieve_knowledge("no-query")
     memory_context = memory_context or []
     context_lines = assemble_context(model_reasoning, knowledge, memory_context)
-    reasoning_lines = [
-        f"Core LLM ({core_llm.value}) aggregated {len(model_reasoning)} model outputs.",
-        "Multi-level context:",
-    ]
-    reasoning_lines.extend(context_lines)
-    reasoning_lines.append(f"Final decision (majority): {top_label}.")
+    system_prompt = (
+        "You are IDS-Agent. Aggregate model reasoning, LIME explanations, and knowledge context "
+        "to produce a final label and short explanation. Respond with JSON containing keys "
+        "`label` and `explanation`."
+    )
+    user_prompt = "\n".join(context_lines)
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model=core_llm.value,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.2,
+        response_format={"type": "json_object"},
+    )
+    content = response.choices[0].message.content or ""
+    label = top_label
+    explanation = f"Final decision (majority): {top_label}."
+    try:
+        payload = json.loads(content)
+        label = str(payload.get("label", label))
+        explanation = str(payload.get("explanation", explanation))
+    except json.JSONDecodeError:
+        if content.strip():
+            explanation = content.strip()
     return AggregatedDecision(
-        label=top_label,
-        reasoning="\n".join(reasoning_lines),
+        label=label,
+        reasoning=explanation,
         model_reasoning=list(model_reasoning),
     )
 

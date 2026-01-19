@@ -32,6 +32,13 @@ The core IDS-Agent LLM choices are:
 
 Default core LLM: GPT-4o (used by evaluation and aggregation).
 
+## GPT-4o API اتصال
+Set your API key before running evaluation so the core LLM aggregation uses GPT-4o:
+
+```bash
+export OPENAI_API_KEY="your_api_key_here"
+```
+
 ## Evaluation (Sample-by-Sample)
 Run evaluation across the CSV dataset while generating per-model reasoning and aggregating via the
 core LLM:
