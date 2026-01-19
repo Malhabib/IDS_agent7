@@ -16,6 +16,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.ids_agent import (
     CoreLLM,
+    DEFAULT_CORE_LLM,
     ModelReasoning,
     aggregate_with_core_llm,
     build_lime_explainer,
@@ -115,7 +116,7 @@ def evaluate_dataset(
         for col in categorical_columns
     }
     predictions_by_llm: dict[CoreLLM, list[str]] = {
-        CoreLLM.GPT_4O_MINI: [],
+        DEFAULT_CORE_LLM: [],
     }
     model_predictions: dict[str, list[str]] = {
         "rf": [],
@@ -165,12 +166,12 @@ def evaluate_dataset(
         knowledge = retrieve_knowledge(query)
         majority_predictions.append(majority_vote(per_model_predictions))
         aggregated = aggregate_with_core_llm(
-            CoreLLM.GPT_4O_MINI,
+            DEFAULT_CORE_LLM,
             model_reasoning,
             knowledge=knowledge,
             memory_context=[],
         )
-        predictions_by_llm[CoreLLM.GPT_4O_MINI].append(aggregated.label)
+        predictions_by_llm[DEFAULT_CORE_LLM].append(aggregated.label)
         if trace_line is not None and row_index + 1 == trace_line:
             sample_frame = pd.DataFrame([sample])
             preprocessed = models["rf"].named_steps["preprocessing"].transform(sample_frame)[
@@ -194,7 +195,7 @@ def evaluate_dataset(
         "SVC": compute_binary_metrics(y_true, np.array(model_predictions["svc"])),
         "Majority Vote": compute_binary_metrics(y_true, np.array(majority_predictions)),
         "IDS-Agent": compute_binary_metrics(
-            y_true, np.array(predictions_by_llm[CoreLLM.GPT_4O_MINI])
+            y_true, np.array(predictions_by_llm[DEFAULT_CORE_LLM])
         ),
     }
 
@@ -203,7 +204,7 @@ def evaluate_dataset(
     print()
 
     report = classification_report(
-        y_true, predictions_by_llm[CoreLLM.GPT_4O_MINI], digits=4, zero_division=0
+        y_true, predictions_by_llm[DEFAULT_CORE_LLM], digits=4, zero_division=0
     )
     print("Multi-class classification report (IDS-Agent):")
     print(report)

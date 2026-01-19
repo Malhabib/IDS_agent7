@@ -30,6 +30,8 @@ The core IDS-Agent LLM choices are:
 - GPT-4o-mini
 - GPT-4o
 
+Default core LLM: GPT-4o (used by evaluation and aggregation).
+
 ## Evaluation (Sample-by-Sample)
 Run evaluation across the CSV dataset while generating per-model reasoning and aggregating via the
 core LLM:

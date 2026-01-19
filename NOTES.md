@@ -26,6 +26,8 @@ We consider three core LLMs:
 - GPT-4o-mini
 - GPT-4o
 
+Default core LLM: GPT-4o (used by aggregation and evaluation).
+
 ## Training/Inference Expectations
 - Remove irrelevant fields (label, timestamps, flow ID).
 - Encode non-numerical fields.

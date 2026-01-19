@@ -24,6 +24,9 @@ class CoreLLM(str, Enum):
     GPT_4O = "gpt-4o"
 
 
+DEFAULT_CORE_LLM = CoreLLM.GPT_4O
+
+
 @dataclass(frozen=True)
 class ModelReasoning:
     model_name: str
@@ -257,7 +260,7 @@ def assemble_context(
 
 
 def aggregate_with_core_llm(
-    core_llm: CoreLLM,
+    core_llm: CoreLLM = DEFAULT_CORE_LLM,
     model_reasoning: Sequence[ModelReasoning],
     *,
     knowledge: KnowledgeRetrievalResult | None = None,
@@ -324,7 +327,7 @@ def update_observation(action: ActionStep, tool_output: str) -> Observation:
 
 
 def run_react_loop(
-    core_llm: CoreLLM,
+    core_llm: CoreLLM = DEFAULT_CORE_LLM,
     user_request: str,
     tool_descriptions: Sequence[str],
     tool_output: str,
