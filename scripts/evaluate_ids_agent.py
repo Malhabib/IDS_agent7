@@ -138,7 +138,7 @@ def evaluate_dataset(
             sample_frame = pd.DataFrame([sample])
             sample_preprocessed = rf_preprocessor.transform(sample_frame)[0]
             shap_explanation = shap_explain_prediction(
-                model_pipeline.predict_proba,
+                model_pipeline.named_steps["model"],
                 sample_preprocessed,
                 preprocessed_matrix,
                 feature_names,

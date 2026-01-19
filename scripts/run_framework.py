@@ -55,7 +55,7 @@ def run_framework(dataset_path: Path, models_dir: Path, *, line_number: int) -> 
         model_outputs.append(output)
         top_prediction = output.top_predictions[0]
         shap_explanation = shap_explain_prediction(
-            model_pipeline.predict_proba,
+            model_pipeline.named_steps["model"],
             preprocessed,
             background,
             feature_names,

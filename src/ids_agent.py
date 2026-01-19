@@ -233,7 +233,7 @@ def generate_model_reasoning(
 
 
 def shap_explain_prediction(
-    predict_fn,
+    model,
     sample_row: np.ndarray,
     background: np.ndarray,
     feature_names: Sequence[str],
@@ -246,7 +246,7 @@ def shap_explain_prediction(
     if background.ndim == 1:
         background = background.reshape(1, -1)
     background_sample = shap.sample(background, min(50, background.shape[0]))
-    explainer = shap.KernelExplainer(lambda x: predict_fn(x), background_sample)
+    explainer = shap.KernelExplainer(model.predict_proba, background_sample)
     shap_values = explainer.shap_values(sample_row.reshape(1, -1), nsamples=50)
     if isinstance(shap_values, list):
         values = np.abs(shap_values[0][0])
