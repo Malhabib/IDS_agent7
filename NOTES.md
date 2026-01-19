@@ -54,6 +54,12 @@ integrating the core LLM into the IDS-Agent control flow.
 The evaluation script can emit an iterative trace that mirrors the required Thought/Action/Observation
 sequence for a specific CSV line (via `--trace-line`).
 
+Baseline methods implemented in code:
+- LLM-based baseline: `gmm_cluster_examples` + `select_diverse_demos` support clustering in-context
+  examples with GMM and selecting demonstrations from distinct clusters, while `retrieve_ltm_demos`
+  provides dynamic LTM retrieval by similarity.
+- Ensemble baseline: `majority_vote_predictions` provides majority voting across ML classifiers.
+
 ### Action Space and Tool Design
 Our IDS-Agent is designed with a comprehensive action space, allowing it to handle various tasks in the pipeline of data processing and classification through iterative reasoning and execution. The action space includes the key actions described below.
 

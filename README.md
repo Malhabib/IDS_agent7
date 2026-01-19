@@ -46,6 +46,9 @@ The IDS-Agent classification flow is multi-level: per-model reasoning is generat
 explanations), knowledge retrieval can be incorporated, and the core LLM aggregates across these
 levels.
 
+Baseline support includes GMM-clustered in-context demonstrations with dynamic LTM retrieval and an
+ensemble majority-vote helper.
+
 ## ReAct-Style LLM Loop
 The IDS-Agent uses a core LLM to iterate over reasoning, action generation, and observation update.
 The loop starts with an initial observation built from the user request and tool descriptions, then

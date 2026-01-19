@@ -383,3 +383,49 @@ def build_iterative_trace(
             ]
         )
     return trace
+
+
+def gmm_cluster_examples(embeddings: np.ndarray, n_clusters: int) -> np.ndarray:
+    """Cluster in-context examples using a Gaussian Mixture Model."""
+    from sklearn.mixture import GaussianMixture
+
+    gmm = GaussianMixture(n_components=n_clusters, random_state=42)
+    return gmm.fit_predict(embeddings)
+
+
+def select_diverse_demos(
+    examples: Sequence[Mapping[str, object]],
+    cluster_labels: Sequence[int],
+    *,
+    max_per_cluster: int = 1,
+) -> List[Mapping[str, object]]:
+    """Select in-context demonstrations from different clusters."""
+    selected: List[Mapping[str, object]] = []
+    seen_counts: dict[int, int] = {}
+    for example, label in zip(examples, cluster_labels):
+        count = seen_counts.get(label, 0)
+        if count >= max_per_cluster:
+            continue
+        selected.append(example)
+        seen_counts[label] = count + 1
+    return selected
+
+
+def retrieve_ltm_demos(
+    embeddings: np.ndarray,
+    query_embedding: np.ndarray,
+    *,
+    top_k: int = 5,
+) -> List[int]:
+    """Retrieve top-k LTM examples based on cosine similarity."""
+    norms = np.linalg.norm(embeddings, axis=1) * np.linalg.norm(query_embedding)
+    scores = embeddings @ query_embedding / np.maximum(norms, 1e-8)
+    return scores.argsort()[::-1][:top_k].tolist()
+
+
+def majority_vote_predictions(predictions: Sequence[str]) -> str:
+    """Baseline ensemble method: majority vote across ML model outputs."""
+    counts: dict[str, int] = {}
+    for label in predictions:
+        counts[label] = counts.get(label, 0) + 1
+    return sorted(counts.items(), key=lambda x: (-x[1], x[0]))[0][0]
