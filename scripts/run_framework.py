@@ -44,8 +44,15 @@ def run_framework(dataset_path: Path, models_dir: Path, *, line_number: int) -> 
     rf_preprocessor = models["rf"].named_steps["preprocessing"]
     sample_frame = pd.DataFrame([sample])
     preprocessed = rf_preprocessor.transform(sample_frame)[0]
+    preprocessed_dense = (
+        preprocessed.toarray().ravel() if hasattr(preprocessed, "toarray") else preprocessed
+    )
     background = rf_preprocessor.transform(df.drop(columns=["label"]))
-    feature_count = preprocessed.shape[1] if hasattr(preprocessed, "shape") else len(preprocessed)
+    feature_count = (
+        preprocessed_dense.shape[0]
+        if hasattr(preprocessed_dense, "shape")
+        else len(preprocessed_dense)
+    )
     feature_names = [f"f{idx}" for idx in range(feature_count)]
 
     model_outputs = []
@@ -56,7 +63,7 @@ def run_framework(dataset_path: Path, models_dir: Path, *, line_number: int) -> 
         top_prediction = output.top_predictions[0]
         shap_explanation = shap_explain_prediction(
             model_pipeline.named_steps["model"],
-            preprocessed,
+            preprocessed_dense,
             background,
             feature_names,
         )
@@ -72,7 +79,7 @@ def run_framework(dataset_path: Path, models_dir: Path, *, line_number: int) -> 
         model_names=list(models.keys()),
         line_number=line_number,
         raw_features=sample,
-        preprocessed_features=preprocessed.tolist(),
+        preprocessed_features=preprocessed_dense.tolist(),
         model_outputs=model_outputs,
         model_reasoning=model_reasoning,
         core_llm=DEFAULT_CORE_LLM,
