@@ -354,12 +354,15 @@ def build_iterative_trace(
         f"{line_number:03d}. I will start by loading the traffic features from the CSV file.",
         "Action: load_data_line",
         f'Action Input: {{"line_number": {line_number}}}',
-        "Observation: request 'sessionID'",
+        "Observation: request \"sessionID\" ???",
         "Thought: I have successfully loaded the traffic features from line number "
         f"{line_number:03d}. Now, I will proceed to preprocess the loaded traffic features to "
         "prepare them for classification.",
         "Action: data_preprocessing",
-        f'Action Input: {{"traffic_features": "{raw_features}"}}',
+        f'Action Input: {{"traffic_features": "connectionTime:{raw_features.get("connectionTime")}, '
+        f'disconnectTime:{raw_features.get("disconnectTime")}, '
+        f'RequestedDemand:{raw_features.get("RequestedDemand")}, '
+        f'kWhDelivered:{raw_features.get("kWhDelivered")}"}}',
         f"Observation: {list(preprocessed_features)}",
         "Thought: I have successfully preprocessed the traffic features. Now, I will proceed to "
         "classify the preprocessed features using multiple classifiers to determine if the "
