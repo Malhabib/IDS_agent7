@@ -22,6 +22,7 @@ from src.ids_agent import (
     build_lime_explainer,
     build_iterative_trace,
     classify_sample,
+    generate_iterative_trace_with_llm,
     generate_model_reasoning,
     lime_explain_prediction,
     retrieve_knowledge,
@@ -185,6 +186,15 @@ def evaluate_dataset(
             )
             print("Iterative LLM trace:")
             print("\n".join(trace))
+            llm_trace = generate_iterative_trace_with_llm(
+                line_number=trace_line,
+                raw_features=sample,
+                preprocessed_features=preprocessed,
+                model_outputs=model_outputs,
+                core_llm=DEFAULT_CORE_LLM,
+            )
+            print("\nIterative LLM trace (GPT-4o):")
+            print(llm_trace)
 
     results = {
         "RF": compute_binary_metrics(y_true, np.array(model_predictions["rf"])),

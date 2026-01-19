@@ -410,6 +410,38 @@ def build_iterative_trace(
     return trace
 
 
+def generate_iterative_trace_with_llm(
+    line_number: int,
+    raw_features: Mapping[str, object],
+    preprocessed_features: Sequence[float],
+    model_outputs: Sequence[ClassificationOutput],
+    *,
+    core_llm: CoreLLM = DEFAULT_CORE_LLM,
+) -> str:
+    """Use the core LLM to render the iterative Thought/Action/Observation trace."""
+    template_lines = build_iterative_trace(
+        line_number=line_number,
+        raw_features=raw_features,
+        preprocessed_features=preprocessed_features,
+        model_outputs=model_outputs,
+    )
+    system_prompt = (
+        "You are IDS-Agent. Render the iterative Thought/Action/Observation trace exactly in the "
+        "same style as the provided template, filling in values consistently."
+    )
+    user_prompt = "\n".join(template_lines)
+    client = OpenAI()
+    response = client.chat.completions.create(
+        model=core_llm.value,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.0,
+    )
+    return response.choices[0].message.content or ""
+
+
 def gmm_cluster_examples(embeddings: np.ndarray, n_clusters: int) -> np.ndarray:
     """Cluster in-context examples using a Gaussian Mixture Model."""
     from sklearn.mixture import GaussianMixture

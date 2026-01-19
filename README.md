@@ -49,7 +49,8 @@ python scripts/evaluate_ids_agent.py path/to/dataset.csv --models-dir models --t
 
 The evaluation prints a binary-metrics table (RF, LR, KNN, MLP, DT, SVC, Majority Vote, IDS-Agent)
 plus multi-class precision/recall/F1 with macro-averaged values. Use `--trace-line` to print the
-iterative LLM-style reasoning/action/observation trace for a specific CSV line.
+iterative LLM-style reasoning/action/observation trace for a specific CSV line. The script will
+also call GPT-4o to render the trace using the core LLM.
 
 The IDS-Agent classification flow is multi-level: per-model reasoning is generated (with LIME
 explanations), knowledge retrieval can be incorporated, and the core LLM aggregates across these
