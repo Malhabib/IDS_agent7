@@ -201,33 +201,29 @@ def generate_model_reasoning(
 
 
 def build_lime_explainer(
-    training_frame: pd.DataFrame,
+    training_data: np.ndarray,
     *,
+    feature_names: Sequence[str],
     class_names: Sequence[str],
-    categorical_features: Sequence[int],
-    categorical_names: dict[int, List[str]],
 ) -> LimeTabularExplainer:
     return LimeTabularExplainer(
-        training_data=training_frame.values,
-        feature_names=training_frame.columns.tolist(),
+        training_data=training_data,
+        feature_names=list(feature_names),
         class_names=list(class_names),
-        categorical_features=categorical_features,
-        categorical_names=categorical_names,
         discretize_continuous=True,
     )
 
 
 def lime_explain_prediction(
     explainer: LimeTabularExplainer,
-    model_pipeline,
-    sample: Mapping[str, object],
+    predict_fn,
+    sample_row: np.ndarray,
     *,
     num_features: int = 5,
 ) -> str:
-    sample_frame = pd.DataFrame([sample])
     explanation = explainer.explain_instance(
-        data_row=sample_frame.values[0],
-        predict_fn=model_pipeline.predict_proba,
+        data_row=sample_row,
+        predict_fn=predict_fn,
         num_features=num_features,
     )
     return "; ".join(f"{feature}={weight:.3f}" for feature, weight in explanation.as_list())

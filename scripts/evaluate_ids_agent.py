@@ -107,15 +107,6 @@ def evaluate_dataset(
     y_true = df["label"].astype(str).to_numpy()
     feature_frame = df.drop(columns=["label"])
     numeric_columns, categorical_columns = split_feature_columns(feature_frame)
-    categorical_indices = [
-        feature_frame.columns.get_loc(col) for col in categorical_columns
-    ]
-    categorical_names = {
-        feature_frame.columns.get_loc(col): sorted(
-            feature_frame[col].dropna().astype(str).unique().tolist()
-        )
-        for col in categorical_columns
-    }
     predictions_by_llm: dict[CoreLLM, list[str]] = {
         DEFAULT_CORE_LLM: [],
     }
@@ -129,12 +120,16 @@ def evaluate_dataset(
     }
     majority_predictions: list[str] = []
 
+    rf_preprocessor = models["rf"].named_steps["preprocessing"]
+    preprocessed_matrix = rf_preprocessor.transform(feature_frame)
+    feature_names = [
+        f"f{idx}" for idx in range(preprocessed_matrix.shape[1])
+    ]
     explainers = {
         model_name: build_lime_explainer(
-            feature_frame,
+            preprocessed_matrix,
+            feature_names=feature_names,
             class_names=[str(cls) for cls in model_pipeline.classes_],
-            categorical_features=categorical_indices,
-            categorical_names=categorical_names,
         )
         for model_name, model_pipeline in models.items()
     }
@@ -149,10 +144,12 @@ def evaluate_dataset(
             model_outputs.append(output)
             top_prediction = output.top_predictions[0]
             per_model_predictions.append(top_prediction.label)
+            sample_frame = pd.DataFrame([sample])
+            sample_preprocessed = rf_preprocessor.transform(sample_frame)[0]
             lime_explanation = lime_explain_prediction(
                 explainers[model_name],
-                model_pipeline,
-                sample,
+                model_pipeline.named_steps["model"].predict_proba,
+                sample_preprocessed,
             )
             model_reasoning.append(
                 generate_model_reasoning(
@@ -175,9 +172,7 @@ def evaluate_dataset(
         predictions_by_llm[DEFAULT_CORE_LLM].append(aggregated.label)
         if trace_line is not None and row_index + 1 == trace_line:
             sample_frame = pd.DataFrame([sample])
-            preprocessed = models["rf"].named_steps["preprocessing"].transform(sample_frame)[
-                0
-            ].tolist()
+            preprocessed = rf_preprocessor.transform(sample_frame)[0].tolist()
             trace = build_iterative_trace(
                 line_number=trace_line,
                 raw_features=sample,
