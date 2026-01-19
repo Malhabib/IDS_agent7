@@ -86,6 +86,9 @@ def run_framework(dataset_path: Path, models_dir: Path, *, line_number: int) -> 
     )
     print("\nFinal aggregation:")
     print(aggregated.reasoning)
+    if aggregated.raw_response:
+        print("\nFinal aggregation (raw LLM response):")
+        print(aggregated.raw_response)
 
 
 def main() -> None:

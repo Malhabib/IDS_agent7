@@ -172,6 +172,8 @@ def evaluate_dataset(
             print(
                 f"- IDS-Agent (LLM): {aggregated.label} | Explanation: {aggregated.reasoning}"
             )
+            if aggregated.raw_response:
+                print(f"- IDS-Agent raw LLM response: {aggregated.raw_response}")
         if trace_line is not None and row_index + 1 == trace_line:
             sample_frame = pd.DataFrame([sample])
             preprocessed = rf_preprocessor.transform(sample_frame)[0].tolist()

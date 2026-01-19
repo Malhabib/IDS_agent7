@@ -74,6 +74,7 @@ class AggregatedDecision:
     label: str
     reasoning: str
     model_reasoning: List[ModelReasoning]
+    raw_response: str | None = None
 
 
 @dataclass(frozen=True)
@@ -328,6 +329,7 @@ def aggregate_with_core_llm(
         label=label,
         reasoning=explanation,
         model_reasoning=list(model_reasoning),
+        raw_response=content or None,
     )
 
 
