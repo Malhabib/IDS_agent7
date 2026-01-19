@@ -65,7 +65,7 @@ def run_framework(dataset_path: Path, models_dir: Path, *, line_number: int) -> 
             )
         )
 
-    stepwise_response = generate_stepwise_llm_response(
+    system_prompt, user_prompt, stepwise_response = generate_stepwise_llm_response(
         model_names=list(models.keys()),
         line_number=line_number,
         raw_features=sample,
@@ -74,6 +74,10 @@ def run_framework(dataset_path: Path, models_dir: Path, *, line_number: int) -> 
         model_reasoning=model_reasoning,
         core_llm=DEFAULT_CORE_LLM,
     )
+    print("Stepwise LLM prompt (system):")
+    print(system_prompt)
+    print("\nStepwise LLM prompt (user):")
+    print(user_prompt)
     print(stepwise_response)
 
     aggregated = aggregate_with_core_llm(

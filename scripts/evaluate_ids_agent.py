@@ -136,13 +136,11 @@ def evaluate_dataset(
             per_model_predictions.append(top_prediction.label)
             sample_frame = pd.DataFrame([sample])
             sample_preprocessed = rf_preprocessor.transform(sample_frame)[0]
-            shap_explanation = None
-            if trace_line is not None and row_index + 1 == trace_line:
-                shap_explanation = shap_explain_prediction(
-                    model_pipeline.named_steps["model"],
-                    sample_preprocessed,
-                    feature_names,
-                )
+            shap_explanation = shap_explain_prediction(
+                model_pipeline.named_steps["model"],
+                sample_preprocessed,
+                feature_names,
+            )
             model_reasoning.append(
                 generate_model_reasoning(
                     model_name,
@@ -182,7 +180,7 @@ def evaluate_dataset(
             )
             print("\nIterative LLM trace (GPT-4o):")
             print(llm_trace)
-            llm_stepwise = generate_stepwise_llm_response(
+            system_prompt, user_prompt, llm_stepwise = generate_stepwise_llm_response(
                 model_names=list(models.keys()),
                 line_number=trace_line,
                 raw_features=sample,
@@ -191,6 +189,10 @@ def evaluate_dataset(
                 model_reasoning=model_reasoning,
                 core_llm=DEFAULT_CORE_LLM,
             )
+            print("\nStepwise LLM prompt (system):")
+            print(system_prompt)
+            print("\nStepwise LLM prompt (user):")
+            print(user_prompt)
             print("\nStepwise LLM response (GPT-4o):")
             print(llm_stepwise)
 

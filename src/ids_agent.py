@@ -464,7 +464,7 @@ def generate_stepwise_llm_response(
     model_reasoning: Sequence[ModelReasoning],
     *,
     core_llm: CoreLLM = DEFAULT_CORE_LLM,
-) -> str:
+) -> tuple[str, str, str]:
     """Ask the core LLM to emit the full stepwise Thought/Action/Observation response."""
     system_prompt = build_general_llm_prompt(model_names)
     model_lines = [
@@ -486,7 +486,7 @@ def generate_stepwise_llm_response(
         ],
         temperature=0.0,
     )
-    return response.choices[0].message.content or ""
+    return system_prompt, user_prompt, response.choices[0].message.content or ""
 
 
 def gmm_cluster_examples(embeddings: np.ndarray, n_clusters: int) -> np.ndarray:
