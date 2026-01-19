@@ -60,12 +60,19 @@ Each CSV row is evaluated as a separate request; the core LLM receives per-model
 confidence scores, applies the majority-vote ensemble baseline, and returns a final label plus
 explanation.
 
-The IDS-Agent classification flow is multi-level: per-model reasoning is generated (with LIME
+The IDS-Agent classification flow is multi-level: per-model reasoning is generated (with SHAP
 explanations), knowledge retrieval can be incorporated, and the core LLM aggregates across these
 levels.
 
 Baseline support includes GMM-clustered in-context demonstrations with dynamic LTM retrieval and an
 ensemble majority-vote helper.
+
+## Run the Framework (ChatGPT Core LLM)
+Use the script below to run the full framework with GPT-4o as the core LLM:
+
+```bash
+python scripts/run_framework.py path/to/dataset.csv --models-dir models --line-number 1
+```
 
 ## ReAct-Style LLM Loop
 The IDS-Agent uses a core LLM to iterate over reasoning, action generation, and observation update.
