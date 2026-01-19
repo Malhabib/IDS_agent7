@@ -28,6 +28,37 @@ class CoreLLM(str, Enum):
 
 DEFAULT_CORE_LLM = CoreLLM.GPT_4O
 
+GENERAL_LLM_PROMPT_TEMPLATE = (
+    "You are a helpful assistant that can implement multi-step tasks, such as intrusion detection. "
+    "I will give you the traffic features, you are asked to classify it using tools. The final "
+    "output must be in a JSON format according to the classifier results. You should plan first such as:\n"
+    "1. Load the traffic features from the CSV file. You can use the load_data_line tool to obtain the complete traffic.\n"
+    "2. Preprocessing the feature. This can be done using the data_preprocessing tool. Input the traffic in the original format.\n"
+    "3. load classifiers for classification. This can be done using the classifier tool. You can use multiple classifiers. "
+    "The tool params include a classifier name, which must be one from {model_names} and the preprocessed features.\n"
+    "4. Retrieve previous successful reasonings to help you predict. This can be done using the memory_retrieve tool with the "
+    "classifier's names and their classification results as input.\n"
+    "5. When there are discrepancies/disagreements for different models, you can search from vector database/google/wiki to get "
+    "more information about the difference of attacks to help you make decisions.\n"
+    "6. At the end, you should summarize the results from these classifiers and provide a final result. Summarize the "
+    "classification with Balance sensitivity, which means balancing the false alarm rate and the missing alarm rate. "
+    "The predicted label should be the original format of classifier prediction. The final output format **must** be:\n\n"
+    "Final Answer:\n"
+    "```json\n"
+    "{'line_number': \\line_number,\n"
+    "'analysis': str, \\here is the Analysis,\n"
+    "'predicted_label_top_1': str,\n"
+    "'predicted_label_top_2': str,\n"
+    "'predicted_label_top_3': str,\n"
+    "}```\n\n"
+    "User Input:\n"
+    "Now, classify the traffic from our dataset\n"
+)
+
+
+def build_general_llm_prompt(model_names: Sequence[str]) -> str:
+    return GENERAL_LLM_PROMPT_TEMPLATE.format(model_names=list(model_names))
+
 
 @dataclass(frozen=True)
 class ModelReasoning:
