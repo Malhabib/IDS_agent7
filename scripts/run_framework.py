@@ -44,7 +44,8 @@ def run_framework(dataset_path: Path, models_dir: Path, *, line_number: int) -> 
     rf_preprocessor = models["rf"].named_steps["preprocessing"]
     sample_frame = pd.DataFrame([sample])
     preprocessed = rf_preprocessor.transform(sample_frame)[0]
-    feature_names = [f"f{idx}" for idx in range(len(preprocessed))]
+    feature_count = preprocessed.shape[1] if hasattr(preprocessed, "shape") else len(preprocessed)
+    feature_names = [f"f{idx}" for idx in range(feature_count)]
 
     model_outputs = []
     model_reasoning = []

@@ -240,6 +240,7 @@ def shap_explain_prediction(
     top_k: int = 5,
 ) -> str:
     explainer = shap.Explainer(model)
+    sample_row = sample_row.toarray().ravel() if hasattr(sample_row, "toarray") else sample_row
     shap_values = explainer(sample_row.reshape(1, -1))
     values = np.abs(shap_values.values[0])
     if values.ndim > 1:
