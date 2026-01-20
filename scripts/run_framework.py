@@ -31,74 +31,107 @@ def load_models(models_dir: Path) -> dict[str, object]:
     return models
 
 
-def run_framework(dataset_path: Path, models_dir: Path, *, line_number: int) -> None:
+def iter_line_numbers(
+    total_rows: int,
+    *,
+    line_number: int,
+    num_samples: int | None,
+    all_samples: bool,
+) -> list[int]:
+    if line_number < 1 or line_number > total_rows:
+        raise ValueError(f"line_number must be between 1 and {total_rows}")
+    if all_samples:
+        return list(range(line_number, total_rows + 1))
+    if num_samples is None:
+        return [line_number]
+    if num_samples < 1:
+        raise ValueError("num_samples must be >= 1")
+    end = min(total_rows, line_number + num_samples - 1)
+    return list(range(line_number, end + 1))
+
+
+def run_framework(
+    dataset_path: Path,
+    models_dir: Path,
+    *,
+    line_number: int,
+    num_samples: int | None,
+    all_samples: bool,
+) -> None:
     df = pd.read_csv(dataset_path)
     if "label" not in df.columns:
         raise ValueError("Dataset must include a 'label' column.")
-    if line_number < 1 or line_number > len(df):
-        raise ValueError(f"line_number must be between 1 and {len(df)}")
+    line_numbers = iter_line_numbers(
+        len(df),
+        line_number=line_number,
+        num_samples=num_samples,
+        all_samples=all_samples,
+    )
 
     models = load_models(models_dir)
-    row = df.iloc[line_number - 1]
-    sample = row.drop(labels=["label"]).to_dict()
     rf_preprocessor = models["rf"].named_steps["preprocessing"]
-    sample_frame = pd.DataFrame([sample])
-    preprocessed = rf_preprocessor.transform(sample_frame)[0]
-    preprocessed_dense = (
-        preprocessed.toarray().ravel() if hasattr(preprocessed, "toarray") else preprocessed
-    )
     background = rf_preprocessor.transform(df.drop(columns=["label"]))
-    feature_count = (
-        preprocessed_dense.shape[0]
-        if hasattr(preprocessed_dense, "shape")
-        else len(preprocessed_dense)
-    )
-    feature_names = [f"f{idx}" for idx in range(feature_count)]
-
-    model_outputs = []
-    model_reasoning = []
-    for model_name, model_pipeline in models.items():
-        output = classify_sample(model_name, model_pipeline, sample, k=3)
-        model_outputs.append(output)
-        top_prediction = output.top_predictions[0]
-        shap_explanation = shap_explain_prediction(
-            model_pipeline.named_steps["model"],
-            preprocessed_dense,
-            background,
-            feature_names,
+    for index, line_number in enumerate(line_numbers, start=1):
+        row = df.iloc[line_number - 1]
+        sample = row.drop(labels=["label"]).to_dict()
+        sample_frame = pd.DataFrame([sample])
+        preprocessed = rf_preprocessor.transform(sample_frame)[0]
+        preprocessed_dense = (
+            preprocessed.toarray().ravel() if hasattr(preprocessed, "toarray") else preprocessed
         )
-        model_reasoning.append(
-            generate_model_reasoning(
-                model_name,
-                top_prediction,
-                explanation=shap_explanation,
+        feature_count = (
+            preprocessed_dense.shape[0]
+            if hasattr(preprocessed_dense, "shape")
+            else len(preprocessed_dense)
+        )
+        feature_names = [f"f{idx}" for idx in range(feature_count)]
+
+        model_outputs = []
+        model_reasoning = []
+        for model_name, model_pipeline in models.items():
+            output = classify_sample(model_name, model_pipeline, sample, k=3)
+            model_outputs.append(output)
+            top_prediction = output.top_predictions[0]
+            shap_explanation = shap_explain_prediction(
+                model_pipeline.named_steps["model"],
+                preprocessed_dense,
+                background,
+                feature_names,
             )
+            model_reasoning.append(
+                generate_model_reasoning(
+                    model_name,
+                    top_prediction,
+                    explanation=shap_explanation,
+                )
+            )
+
+        system_prompt, user_prompt, stepwise_response = generate_stepwise_llm_response(
+            model_names=list(models.keys()),
+            line_number=line_number,
+            raw_features=sample,
+            preprocessed_features=preprocessed_dense.tolist(),
+            model_outputs=model_outputs,
+            model_reasoning=model_reasoning,
+            core_llm=DEFAULT_CORE_LLM,
         )
+        if len(line_numbers) > 1:
+            print(f"\n=== Sample {index}/{len(line_numbers)} (line {line_number}) ===")
+        print("Stepwise LLM prompt (system):")
+        print(system_prompt)
+        print("\nStepwise LLM prompt (user):")
+        print(user_prompt)
+        print(stepwise_response)
 
-    system_prompt, user_prompt, stepwise_response = generate_stepwise_llm_response(
-        model_names=list(models.keys()),
-        line_number=line_number,
-        raw_features=sample,
-        preprocessed_features=preprocessed_dense.tolist(),
-        model_outputs=model_outputs,
-        model_reasoning=model_reasoning,
-        core_llm=DEFAULT_CORE_LLM,
-    )
-    print("Stepwise LLM prompt (system):")
-    print(system_prompt)
-    print("\nStepwise LLM prompt (user):")
-    print(user_prompt)
-    print(stepwise_response)
-
-    aggregated = aggregate_with_core_llm(
-        model_reasoning,
-        core_llm=DEFAULT_CORE_LLM,
-    )
-    print("\nFinal aggregation:")
-    print(aggregated.reasoning)
-    if aggregated.raw_response:
-        print("\nFinal aggregation (raw LLM response):")
-        print(aggregated.raw_response)
+        aggregated = aggregate_with_core_llm(
+            model_reasoning,
+            core_llm=DEFAULT_CORE_LLM,
+        )
+        print("\nFinal aggregation:")
+        print(aggregated.reasoning)
+        if aggregated.raw_response:
+            print("\nFinal aggregation (raw LLM response):")
+            print(aggregated.raw_response)
 
 
 def main() -> None:
@@ -111,10 +144,27 @@ def main() -> None:
         "--line-number",
         type=int,
         default=1,
-        help="CSV line number to classify (1-indexed).",
+        help="CSV line number to start from (1-indexed).",
+    )
+    parser.add_argument(
+        "--num-samples",
+        type=int,
+        default=None,
+        help="Number of samples to run starting from --line-number.",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Run all samples from --line-number to the end of the dataset.",
     )
     args = parser.parse_args()
-    run_framework(args.dataset, args.models_dir, line_number=args.line_number)
+    run_framework(
+        args.dataset,
+        args.models_dir,
+        line_number=args.line_number,
+        num_samples=args.num_samples,
+        all_samples=args.all,
+    )
 
 
 if __name__ == "__main__":

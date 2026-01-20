@@ -89,6 +89,18 @@ Use the script below to run the full framework with GPT-4o as the core LLM:
 python scripts/run_framework.py path/to/dataset.csv --models-dir models --line-number 1
 ```
 
+Run multiple samples starting at a specific line (e.g., 100 samples):
+
+```bash
+python scripts/run_framework.py path/to/dataset.csv --models-dir models --line-number 1 --num-samples 100
+```
+
+Run all samples from a starting line:
+
+```bash
+python scripts/run_framework.py path/to/dataset.csv --models-dir models --line-number 1 --all
+```
+
 ## ReAct-Style LLM Loop
 The IDS-Agent uses a core LLM to iterate over reasoning, action generation, and observation update.
 The loop starts with an initial observation built from the user request and tool descriptions, then
