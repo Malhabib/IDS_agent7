@@ -294,9 +294,13 @@ def shap_explain_prediction(
     if values.ndim > 1:
         values = values.max(axis=0)
     top_indices = np.argsort(values)[::-1][:top_k]
-    return "; ".join(
-        f"{feature_names[idx]}={values[idx]:.3f}" for idx in top_indices
-    )
+    sample_values = np.asarray(sample_row).ravel()
+    parts = []
+    for idx in top_indices:
+        feature = feature_names[idx] if idx < len(feature_names) else f"f{idx}"
+        value = sample_values[idx] if idx < len(sample_values) else float("nan")
+        parts.append(f"{feature} (value={value:.3f}, shap={values[idx]:.3f})")
+    return "; ".join(parts)
 
 
 def retrieve_knowledge(query: str) -> KnowledgeRetrievalResult:

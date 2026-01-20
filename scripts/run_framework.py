@@ -37,7 +37,9 @@ def load_models(models_dir: Path) -> dict[str, object]:
     return models
 
 
-def train_models_from_data(df: pd.DataFrame, *, train_fraction: float) -> dict[str, object]:
+def train_models_from_data(
+    df: pd.DataFrame, *, train_fraction: float
+) -> tuple[dict[str, object], pd.DataFrame, set[int]]:
     if LABEL_COLUMN not in df.columns:
         raise ValueError(f"Missing required column: {LABEL_COLUMN}")
     if train_fraction <= 0 or train_fraction >= 1:
@@ -48,13 +50,15 @@ def train_models_from_data(df: pd.DataFrame, *, train_fraction: float) -> dict[s
         raise ValueError("No usable feature columns remain after preprocessing.")
     numeric_columns, categorical_columns = split_feature_columns(feature_frame)
 
-    X_train, _, y_train, _ = train_test_split(
-        feature_frame,
-        df[LABEL_COLUMN],
+    indices = df.index.to_numpy()
+    train_idx, eval_idx = train_test_split(
+        indices,
         train_size=train_fraction,
         random_state=42,
         stratify=df[LABEL_COLUMN],
     )
+    X_train = feature_frame.loc[train_idx]
+    y_train = df.loc[train_idx, LABEL_COLUMN]
 
     trained = {}
     for name, model in MODELS.items():
@@ -63,7 +67,7 @@ def train_models_from_data(df: pd.DataFrame, *, train_fraction: float) -> dict[s
         )
         pipeline.fit(X_train, y_train)
         trained[name] = pipeline
-    return trained
+    return trained, df.loc[train_idx], set(eval_idx)
 
 
 def iter_line_numbers(
@@ -104,13 +108,18 @@ def run_framework(
         all_samples=all_samples,
     )
 
+    eval_indices: set[int] | None = None
+    train_frame: pd.DataFrame | None = None
     if train_fraction > 0:
         print(f"Training models on {train_fraction:.0%} of the dataset before evaluation...")
-        models = train_models_from_data(df, train_fraction=train_fraction)
+        models, train_frame, eval_indices = train_models_from_data(
+            df, train_fraction=train_fraction
+        )
     else:
         models = load_models(models_dir)
     rf_preprocessor = models["rf"].named_steps["preprocessing"]
-    background = rf_preprocessor.transform(df.drop(columns=["label"]))
+    background_source = train_frame if train_frame is not None else df
+    background = rf_preprocessor.transform(background_source.drop(columns=["label"]))
     model_order = ["rf", "lr", "knn", "mlp", "dt", "svc"]
     ordered_models = {name: models[name] for name in model_order if name in models}
     for model_name, model_pipeline in models.items():
@@ -122,7 +131,24 @@ def run_framework(
     labels_ids: list[str] = []
     labels_by_model: dict[str, list[str]] = {name: [] for name in ordered_models}
 
-    for index, line_number in enumerate(line_numbers, start=1):
+    filtered_lines: list[int] = []
+    if eval_indices is not None:
+        for line_number in line_numbers:
+            row_index = line_number - 1
+            if row_index in eval_indices:
+                filtered_lines.append(line_number)
+            else:
+                print(
+                    f"Skipping line {line_number} because it was used for training. "
+                    "Choose a different start line or increase --num-samples."
+                )
+    else:
+        filtered_lines = list(line_numbers)
+
+    if not filtered_lines:
+        raise ValueError("No evaluation samples remain after removing training rows.")
+
+    for index, line_number in enumerate(filtered_lines, start=1):
         row = df.iloc[line_number - 1]
         labels_true.append(str(row["label"]))
         sample = row.drop(labels=["label"]).to_dict()
@@ -168,8 +194,8 @@ def run_framework(
             model_reasoning=model_reasoning,
             core_llm=DEFAULT_CORE_LLM,
         )
-        if len(line_numbers) > 1:
-            print(f"\n=== Sample {index}/{len(line_numbers)} (line {line_number}) ===")
+        if len(filtered_lines) > 1:
+            print(f"\n=== Sample {index}/{len(filtered_lines)} (line {line_number}) ===")
         print("Stepwise LLM prompt (system):")
         print(system_prompt)
         print("\nStepwise LLM prompt (user):")
@@ -211,7 +237,7 @@ def run_framework(
         ]
     )
 
-    print("\nF1-score report (macro average):")
+    print("\nF1-score report (macro average, evaluated on holdout samples):")
     header = "| Model | " + " | ".join(report_columns) + " |"
     separator = "| --- | " + " | ".join(["---"] * len(report_columns)) + " |"
     values = "| F1-score | " + " | ".join(f"{score:.3f}" for score in report_scores) + " |"
