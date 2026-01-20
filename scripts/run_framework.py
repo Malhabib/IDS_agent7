@@ -8,19 +8,23 @@ from pathlib import Path
 import joblib
 import pandas as pd
 from sklearn.metrics import f1_score
+from sklearn.model_selection import train_test_split
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from scripts.train_models import LABEL_COLUMN, MODELS, build_pipeline
 from src.ids_agent import (
     DEFAULT_CORE_LLM,
     aggregate_with_core_llm,
     classify_sample,
+    drop_irrelevant_fields,
     generate_model_reasoning,
     generate_stepwise_llm_response,
     majority_vote_predictions,
     shap_explain_prediction,
+    split_feature_columns,
 )
 
 
@@ -31,6 +35,35 @@ def load_models(models_dir: Path) -> dict[str, object]:
     if not models:
         raise ValueError(f"No models found in {models_dir}")
     return models
+
+
+def train_models_from_data(df: pd.DataFrame, *, train_fraction: float) -> dict[str, object]:
+    if LABEL_COLUMN not in df.columns:
+        raise ValueError(f"Missing required column: {LABEL_COLUMN}")
+    if train_fraction <= 0 or train_fraction >= 1:
+        raise ValueError("train_fraction must be between 0 and 1 (exclusive).")
+
+    feature_frame = drop_irrelevant_fields(df, label_column=LABEL_COLUMN)
+    if feature_frame.empty:
+        raise ValueError("No usable feature columns remain after preprocessing.")
+    numeric_columns, categorical_columns = split_feature_columns(feature_frame)
+
+    X_train, _, y_train, _ = train_test_split(
+        feature_frame,
+        df[LABEL_COLUMN],
+        train_size=train_fraction,
+        random_state=42,
+        stratify=df[LABEL_COLUMN],
+    )
+
+    trained = {}
+    for name, model in MODELS.items():
+        pipeline = build_pipeline(
+            model, numeric_columns=numeric_columns, categorical_columns=categorical_columns
+        )
+        pipeline.fit(X_train, y_train)
+        trained[name] = pipeline
+    return trained
 
 
 def iter_line_numbers(
@@ -59,6 +92,7 @@ def run_framework(
     line_number: int,
     num_samples: int | None,
     all_samples: bool,
+    train_fraction: float,
 ) -> None:
     df = pd.read_csv(dataset_path)
     if "label" not in df.columns:
@@ -70,7 +104,11 @@ def run_framework(
         all_samples=all_samples,
     )
 
-    models = load_models(models_dir)
+    if train_fraction > 0:
+        print(f"Training models on {train_fraction:.0%} of the dataset before evaluation...")
+        models = train_models_from_data(df, train_fraction=train_fraction)
+    else:
+        models = load_models(models_dir)
     rf_preprocessor = models["rf"].named_steps["preprocessing"]
     background = rf_preprocessor.transform(df.drop(columns=["label"]))
     model_order = ["rf", "lr", "knn", "mlp", "dt", "svc"]
@@ -205,6 +243,12 @@ def main() -> None:
         action="store_true",
         help="Run all samples from --line-number to the end of the dataset.",
     )
+    parser.add_argument(
+        "--train-fraction",
+        type=float,
+        default=0.2,
+        help="Fraction of the dataset to use for training before evaluation (0 to skip).",
+    )
     args = parser.parse_args()
     run_framework(
         args.dataset,
@@ -212,6 +256,7 @@ def main() -> None:
         line_number=args.line_number,
         num_samples=args.num_samples,
         all_samples=args.all,
+        train_fraction=args.train_fraction,
     )
 
 

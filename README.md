@@ -101,6 +101,14 @@ Run all samples from a starting line:
 python scripts/run_framework.py path/to/dataset.csv --models-dir models --line-number 1 --all
 ```
 
+By default, the framework trains the six ML models on 20% of the dataset before running the
+requested samples. To skip training and use pre-trained models from `--models-dir`, set
+`--train-fraction 0`.
+
+```bash
+python scripts/run_framework.py path/to/dataset.csv --models-dir models --line-number 1 --all --train-fraction 0
+```
+
 After the run completes, the script prints an F1-score report (macro average) covering each model,
 majority vote, and the IDS-Agent aggregation.
 
