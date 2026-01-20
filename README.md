@@ -101,6 +101,9 @@ Run all samples from a starting line:
 python scripts/run_framework.py path/to/dataset.csv --models-dir models --line-number 1 --all
 ```
 
+After the run completes, the script prints an F1-score report (macro average) covering each model,
+majority vote, and the IDS-Agent aggregation.
+
 ## ReAct-Style LLM Loop
 The IDS-Agent uses a core LLM to iterate over reasoning, action generation, and observation update.
 The loop starts with an initial observation built from the user request and tool descriptions, then

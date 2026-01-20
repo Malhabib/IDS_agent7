@@ -7,6 +7,7 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
+from sklearn.metrics import f1_score
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -18,6 +19,7 @@ from src.ids_agent import (
     classify_sample,
     generate_model_reasoning,
     generate_stepwise_llm_response,
+    majority_vote_predictions,
     shap_explain_prediction,
 )
 
@@ -71,8 +73,20 @@ def run_framework(
     models = load_models(models_dir)
     rf_preprocessor = models["rf"].named_steps["preprocessing"]
     background = rf_preprocessor.transform(df.drop(columns=["label"]))
+    model_order = ["rf", "lr", "knn", "mlp", "dt", "svc"]
+    ordered_models = {name: models[name] for name in model_order if name in models}
+    for model_name, model_pipeline in models.items():
+        if model_name not in ordered_models:
+            ordered_models[model_name] = model_pipeline
+
+    labels_true: list[str] = []
+    labels_majority: list[str] = []
+    labels_ids: list[str] = []
+    labels_by_model: dict[str, list[str]] = {name: [] for name in ordered_models}
+
     for index, line_number in enumerate(line_numbers, start=1):
         row = df.iloc[line_number - 1]
+        labels_true.append(str(row["label"]))
         sample = row.drop(labels=["label"]).to_dict()
         sample_frame = pd.DataFrame([sample])
         preprocessed = rf_preprocessor.transform(sample_frame)[0]
@@ -88,10 +102,11 @@ def run_framework(
 
         model_outputs = []
         model_reasoning = []
-        for model_name, model_pipeline in models.items():
+        for model_name, model_pipeline in ordered_models.items():
             output = classify_sample(model_name, model_pipeline, sample, k=3)
             model_outputs.append(output)
             top_prediction = output.top_predictions[0]
+            labels_by_model[model_name].append(str(top_prediction.label))
             shap_explanation = shap_explain_prediction(
                 model_pipeline.named_steps["model"],
                 preprocessed_dense,
@@ -127,11 +142,44 @@ def run_framework(
             model_reasoning,
             core_llm=DEFAULT_CORE_LLM,
         )
+        labels_majority.append(majority_vote_predictions([item.prediction for item in model_reasoning]))
+        labels_ids.append(str(aggregated.label))
         print("\nFinal aggregation:")
         print(aggregated.reasoning)
         if aggregated.raw_response:
             print("\nFinal aggregation (raw LLM response):")
             print(aggregated.raw_response)
+
+    report_columns = []
+    report_scores = []
+    for model_name in model_order:
+        if model_name in labels_by_model:
+            report_columns.append(model_name.upper())
+            report_scores.append(
+                f1_score(labels_true, labels_by_model[model_name], average="macro", zero_division=0)
+            )
+    for model_name in labels_by_model:
+        if model_name in model_order:
+            continue
+        report_columns.append(model_name.upper())
+        report_scores.append(
+            f1_score(labels_true, labels_by_model[model_name], average="macro", zero_division=0)
+        )
+    report_columns.extend(["Majority Vote", "IDS-Agent"])
+    report_scores.extend(
+        [
+            f1_score(labels_true, labels_majority, average="macro", zero_division=0),
+            f1_score(labels_true, labels_ids, average="macro", zero_division=0),
+        ]
+    )
+
+    print("\nF1-score report (macro average):")
+    header = "| Model | " + " | ".join(report_columns) + " |"
+    separator = "| --- | " + " | ".join(["---"] * len(report_columns)) + " |"
+    values = "| F1-score | " + " | ".join(f"{score:.3f}" for score in report_scores) + " |"
+    print(header)
+    print(separator)
+    print(values)
 
 
 def main() -> None:
