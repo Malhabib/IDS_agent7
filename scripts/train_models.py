@@ -30,12 +30,21 @@ from src.ids_agent import (
 LABEL_COLUMN = "label"
 
 MODELS = {
-    "rf": RandomForestClassifier(n_estimators=200, random_state=42),
-    "knn": KNeighborsClassifier(n_neighbors=5),
-    "lr": LogisticRegression(max_iter=200),
-    "dt": DecisionTreeClassifier(random_state=42),
-    "mlp": MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=300, random_state=42),
-    "svc": SVC(kernel="rbf", probability=True),
+    "rf": RandomForestClassifier(
+        n_estimators=300,
+        class_weight="balanced",
+        random_state=42,
+    ),
+    "knn": KNeighborsClassifier(n_neighbors=7, weights="distance"),
+    "lr": LogisticRegression(max_iter=500, class_weight="balanced"),
+    "dt": DecisionTreeClassifier(random_state=42, class_weight="balanced"),
+    "mlp": MLPClassifier(
+        hidden_layer_sizes=(128, 64),
+        max_iter=500,
+        random_state=42,
+        early_stopping=True,
+    ),
+    "svc": SVC(kernel="rbf", probability=True, class_weight="balanced"),
 }
 
 
