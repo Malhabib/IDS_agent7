@@ -101,7 +101,7 @@ Run all samples from a starting line:
 python scripts/run_framework.py path/to/dataset.csv --models-dir models --line-number 1 --all
 ```
 
-By default, the framework trains the six ML models on 20% of the dataset and evaluates on the
+By default, the framework trains the six ML models on 40% of the dataset and evaluates on the
 remaining holdout samples to avoid training/evaluation leakage. To skip training and use
 pre-trained models from `--models-dir`, set `--train-fraction 0`.
 

@@ -272,7 +272,7 @@ def main() -> None:
     parser.add_argument(
         "--train-fraction",
         type=float,
-        default=0.2,
+        default=0.4,
         help="Fraction of the dataset to use for training before evaluation (0 to skip).",
     )
     args = parser.parse_args()
