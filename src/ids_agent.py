@@ -377,6 +377,7 @@ def aggregate_with_core_llm(
     content = response.choices[0].message.content or ""
     label = top_label
     explanation = f"Final decision (majority): {top_label}."
+    allowed_labels = {str(item) for item in model_labels}
     try:
         payload = json.loads(content)
         label = str(payload.get("label", label))
@@ -384,6 +385,12 @@ def aggregate_with_core_llm(
     except json.JSONDecodeError:
         if content.strip():
             explanation = content.strip()
+    if label not in allowed_labels:
+        explanation = (
+            f"{explanation} (LLM label '{label}' not in model outputs; "
+            f"falling back to majority label '{top_label}'.)"
+        )
+        label = top_label
     return AggregatedDecision(
         label=label,
         reasoning=explanation,
