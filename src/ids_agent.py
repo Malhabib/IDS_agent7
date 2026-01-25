@@ -1,0 +1,605 @@
+"""IDS-Agent preprocessing and classification tools."""
+from __future__ import annotations
+
+from dataclasses import dataclass
+import json
+import os
+from enum import Enum
+from typing import Iterable, List, Mapping, Sequence
+
+import numpy as np
+import pandas as pd
+from openai import OpenAI
+import shap
+from sklearn.compose import ColumnTransformer
+from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+DEFAULT_LABEL_COLUMN = "label"
+DEFAULT_TIMESTAMP_COLUMNS = ("connectionTime", "disconnectTime", "timestamp")
+DEFAULT_FLOW_ID_COLUMNS = ("flow_id", "flowId", "flowID", "FlowID")
+
+class CoreLLM(str, Enum):
+    GPT_3_5_TURBO = "gpt-3.5-turbo"
+    GPT_4O_MINI = "gpt-4o-mini"
+    GPT_4O = "gpt-4o"
+
+
+DEFAULT_CORE_LLM = CoreLLM.GPT_4O
+DEFAULT_OLLAMA_MODEL = "llama3.2"
+
+GENERAL_LLM_PROMPT_TEMPLATE = (
+    "You are a helpful assistant that can implement multi-step tasks, such as intrusion detection. "
+    "You will receive traffic features and the outputs from multiple ML classifiers. Use the tools "
+    "and reasoning trace below to produce a final classification. The final output must be a JSON "
+    "object that summarizes the aggregated result.\n\n"
+    "Planning steps (use these tools in order):\n"
+    "1. Load the traffic features from the CSV file (tool: load_data_line).\n"
+    "2. Preprocess the features (tool: data_preprocessing).\n"
+    "3. Run multiple classifiers (tool: classifier). Available models: {model_names}.\n"
+    "4. Retrieve previous successful reasonings if helpful (tool: memory_retrieve).\n"
+    "5. If classifiers disagree, retrieve knowledge for clarification (tool: knowledge_retrieve).\n"
+    "6. Aggregate results with balanced sensitivity (minimize false alarms and missed alarms).\n\n"
+    "Use the following template to structure the response after you collect the classifier results:\n\n"
+    "Thought: Summarize the multi-model predictions and identify any disagreements.\n"
+    "Action: knowledge_retrieve\n"
+    "Action Input: {{\"query\": \"<brief query about conflicting labels or key attack types>\"}}\n"
+    "Observation: <summary of retrieved context>\n"
+    "Thought: Combine classifier outputs with SHAP feature impacts (include feature names and values).\n"
+    "Final Answer:\n"
+    "```json\n"
+    "{{\n"
+    "  \"line_number\": <line_number>,\n"
+    "  \"analysis\": \"<short reasoning that references the most influential features and model outputs>\",\n"
+    "  \"predicted_label_top_1\": \"<label>\",\n"
+    "  \"predicted_label_top_2\": \"<label>\",\n"
+    "  \"predicted_label_top_3\": \"<label>\"\n"
+    "}}\n"
+    "```\n\n"
+    "User Input:\n"
+    "Now, classify the traffic from our dataset.\n"
+)
+
+
+def build_general_llm_prompt(model_names: Sequence[str]) -> str:
+    return GENERAL_LLM_PROMPT_TEMPLATE.format(model_names=list(model_names))
+
+
+def create_llm_client() -> tuple[OpenAI, str]:
+    """Create an OpenAI-compatible client (OpenAI or Ollama)."""
+    ollama_url = os.getenv("OLLAMA_BASE_URL")
+    ollama_model = os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+    if ollama_url:
+        return OpenAI(base_url=ollama_url, api_key="ollama"), ollama_model
+    if not os.getenv("OPENAI_API_KEY"):
+        raise RuntimeError(
+            "Missing OPENAI_API_KEY. Set it before running GPT-4o aggregation."
+        )
+    return OpenAI(), DEFAULT_CORE_LLM.value
+
+
+def call_llm(
+    client: OpenAI,
+    model_name: str,
+    messages: list[dict[str, str]],
+    *,
+    temperature: float,
+    response_format: dict[str, str] | None = None,
+):
+    try:
+        payload = dict(
+            model=model_name,
+            messages=messages,
+            temperature=temperature,
+        )
+        if response_format:
+            payload["response_format"] = response_format
+        return client.chat.completions.create(**payload)
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            f"LLM call failed for model '{model_name}'. If using Ollama, ensure the model "
+            "is pulled and the name matches `ollama list`."
+        ) from exc
+
+
+@dataclass(frozen=True)
+class ModelReasoning:
+    model_name: str
+    prediction: str
+    confidence: float
+    reasoning: str
+    explanation: str | None = None
+
+
+@dataclass(frozen=True)
+class AggregatedDecision:
+    label: str
+    reasoning: str
+    model_reasoning: List[ModelReasoning]
+    raw_response: str | None = None
+
+
+@dataclass(frozen=True)
+class KnowledgeSnippet:
+    source: str
+    content: str
+
+
+@dataclass(frozen=True)
+class KnowledgeRetrievalResult:
+    query: str
+    snippets: List[KnowledgeSnippet]
+
+
+@dataclass(frozen=True)
+class ActionStep:
+    name: str
+    tool: str
+    parameters: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class Observation:
+    headline: str
+    content: str
+
+
+def drop_irrelevant_fields(
+    frame: pd.DataFrame,
+    *,
+    label_column: str = DEFAULT_LABEL_COLUMN,
+    timestamp_columns: Sequence[str] = DEFAULT_TIMESTAMP_COLUMNS,
+    flow_id_columns: Sequence[str] = DEFAULT_FLOW_ID_COLUMNS,
+) -> pd.DataFrame:
+    """Remove label, timestamps, and flow identifiers before preprocessing."""
+    drop_columns = {
+        col
+        for col in frame.columns
+        if col == label_column
+        or col in timestamp_columns
+        or col in flow_id_columns
+    }
+    return frame.drop(columns=sorted(drop_columns), errors="ignore")
+
+
+def split_feature_columns(frame: pd.DataFrame) -> tuple[List[str], List[str]]:
+    """Split columns into numeric and categorical lists."""
+    numeric_columns = frame.select_dtypes(include=[np.number]).columns.tolist()
+    categorical_columns = [col for col in frame.columns if col not in numeric_columns]
+    return numeric_columns, categorical_columns
+
+
+def build_preprocessing_pipeline(
+    *,
+    numeric_columns: Sequence[str],
+    categorical_columns: Sequence[str],
+    k_best: int | str = "all",
+) -> Pipeline:
+    """Build preprocessing pipeline with encoding, F-test feature selection, and scaling."""
+    numeric_pipeline = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="median")),
+        ]
+    )
+    categorical_pipeline = Pipeline(
+        steps=[
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("encoder", OneHotEncoder(handle_unknown="ignore")),
+        ]
+    )
+    preprocessor = ColumnTransformer(
+        transformers=[
+            ("numeric", numeric_pipeline, list(numeric_columns)),
+            ("categorical", categorical_pipeline, list(categorical_columns)),
+        ]
+    )
+    return Pipeline(
+        steps=[
+            ("preprocessor", preprocessor),
+            ("feature_selection", SelectKBest(score_func=f_classif, k=k_best)),
+            ("scaler", StandardScaler(with_mean=False)),
+        ]
+    )
+
+
+@dataclass(frozen=True)
+class TopPrediction:
+    label: str
+    confidence: float
+
+
+@dataclass(frozen=True)
+class ClassificationOutput:
+    model_name: str
+    top_predictions: List[TopPrediction]
+
+
+def _ensure_frame(samples: Iterable[Mapping[str, object]]) -> pd.DataFrame:
+    return pd.DataFrame(samples)
+
+
+def _top_k_from_proba(
+    proba: np.ndarray,
+    classes: Sequence[object],
+    *,
+    k: int = 3,
+) -> List[TopPrediction]:
+    top_count = min(k, proba.shape[1])
+    indices = np.argsort(proba, axis=1)[:, ::-1][:, :top_count]
+    row = indices[0]
+    return [
+        TopPrediction(label=str(classes[idx]), confidence=float(proba[0, idx]))
+        for idx in row
+    ]
+
+
+def classify_sample(
+    model_name: str,
+    model_pipeline,
+    sample: Mapping[str, object],
+    *,
+    k: int = 3,
+) -> ClassificationOutput:
+    """Run the full preprocessing + classification pipeline and return top-k labels."""
+    frame = _ensure_frame([sample])
+    if hasattr(model_pipeline, "predict_proba"):
+        proba = model_pipeline.predict_proba(frame)
+        top_predictions = _top_k_from_proba(proba, model_pipeline.classes_, k=k)
+    else:
+        scores = model_pipeline.decision_function(frame)
+        if scores.ndim == 1:
+            scores = np.stack([-scores, scores], axis=1)
+        exp_scores = np.exp(scores - np.max(scores, axis=1, keepdims=True))
+        proba = exp_scores / exp_scores.sum(axis=1, keepdims=True)
+        top_predictions = _top_k_from_proba(proba, model_pipeline.classes_, k=k)
+    return ClassificationOutput(model_name=model_name, top_predictions=top_predictions)
+
+
+def generate_model_reasoning(
+    model_name: str,
+    top_prediction: TopPrediction,
+    explanation: str | None = None,
+) -> ModelReasoning:
+    """Generate per-model reasoning text for feeding the core LLM."""
+    reasoning = (
+        f"{model_name} predicts {top_prediction.label} with confidence "
+        f"{top_prediction.confidence:.4f} based on the preprocessed features."
+    )
+    return ModelReasoning(
+        model_name=model_name,
+        prediction=top_prediction.label,
+        confidence=top_prediction.confidence,
+        reasoning=reasoning,
+        explanation=explanation,
+    )
+
+
+def shap_explain_prediction(
+    model,
+    sample_row: np.ndarray,
+    background: np.ndarray,
+    feature_names: Sequence[str],
+    *,
+    top_k: int = 5,
+) -> str:
+    sample_row = sample_row.toarray().ravel() if hasattr(sample_row, "toarray") else sample_row
+    background = background.toarray() if hasattr(background, "toarray") else background
+    background = np.asarray(background)
+    if background.ndim == 1:
+        background = background.reshape(1, -1)
+    background_sample = shap.sample(background, min(50, background.shape[0]))
+    explainer = shap.KernelExplainer(model.predict_proba, background_sample)
+    shap_values = explainer.shap_values(sample_row.reshape(1, -1), nsamples=50)
+    if isinstance(shap_values, list):
+        values = np.abs(shap_values[0][0])
+    else:
+        values = np.abs(shap_values[0])
+    if values.ndim > 1:
+        values = values.max(axis=0)
+    top_indices = np.argsort(values)[::-1][:top_k]
+    sample_values = np.asarray(sample_row).ravel()
+    parts = []
+    for idx in top_indices:
+        feature = feature_names[idx] if idx < len(feature_names) else f"f{idx}"
+        value = sample_values[idx] if idx < len(sample_values) else float("nan")
+        parts.append(f"{feature} (value={value:.3f}, shap={values[idx]:.3f})")
+    return "; ".join(parts)
+
+
+def retrieve_knowledge(query: str) -> KnowledgeRetrievalResult:
+    """Stub for knowledge retrieval to support multi-level classification."""
+    return KnowledgeRetrievalResult(query=query, snippets=[])
+
+
+def assemble_context(
+    model_reasoning: Sequence[ModelReasoning],
+    knowledge: KnowledgeRetrievalResult,
+    memory_context: Sequence[str],
+) -> List[str]:
+    context_lines = ["Model reasoning:"]
+    for item in model_reasoning:
+        line = f"- {item.model_name}: {item.reasoning}"
+        if item.explanation:
+            line += f" | SHAP: {item.explanation}"
+        context_lines.append(line)
+    context_lines.append(f"Knowledge retrieval query: {knowledge.query}")
+    if knowledge.snippets:
+        context_lines.append("Knowledge snippets:")
+        context_lines.extend(
+            f"- ({snippet.source}) {snippet.content}" for snippet in knowledge.snippets
+        )
+    if memory_context:
+        context_lines.append("Long-term memory context:")
+        context_lines.extend(f"- {item}" for item in memory_context)
+    return context_lines
+
+
+def aggregate_with_core_llm(
+    model_reasoning: Sequence[ModelReasoning],
+    core_llm: CoreLLM = DEFAULT_CORE_LLM,
+    *,
+    knowledge: KnowledgeRetrievalResult | None = None,
+    memory_context: Sequence[str] | None = None,
+) -> AggregatedDecision:
+    """Aggregate model reasoning into a single decision using the core LLM."""
+    if not model_reasoning:
+        return AggregatedDecision(
+            label="Unknown",
+            reasoning="No model outputs were provided for aggregation.",
+            model_reasoning=[],
+        )
+
+    model_labels = [item.prediction for item in model_reasoning]
+    top_label = majority_vote_predictions(model_labels)
+    knowledge = knowledge or retrieve_knowledge("no-query")
+    memory_context = memory_context or []
+    context_lines = assemble_context(model_reasoning, knowledge, memory_context)
+    context_lines.append(f"Majority vote label: {top_label}")
+    system_prompt = (
+        "You are IDS-Agent. Use majority voting across the six ML models as the ensemble baseline, "
+        "then write a short reasoning summary and final label using SHAP explanations as support. "
+        "Respond with JSON containing keys `label` and `explanation`."
+    )
+    user_prompt = "\n".join(context_lines)
+    client, model_name = create_llm_client()
+    response = call_llm(
+        client,
+        model_name,
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.2,
+        response_format=None if os.getenv("OLLAMA_BASE_URL") else {"type": "json_object"},
+    )
+    content = response.choices[0].message.content or ""
+    label = top_label
+    explanation = f"Final decision (majority): {top_label}."
+    allowed_labels = {str(item) for item in model_labels}
+    try:
+        payload = json.loads(content)
+        label = str(payload.get("label", label))
+        explanation = str(payload.get("explanation", explanation))
+    except json.JSONDecodeError:
+        if content.strip():
+            explanation = content.strip()
+    if label not in allowed_labels:
+        explanation = (
+            f"{explanation} (LLM label '{label}' not in model outputs; "
+            f"falling back to majority label '{top_label}'.)"
+        )
+        label = top_label
+    return AggregatedDecision(
+        label=label,
+        reasoning=explanation,
+        model_reasoning=list(model_reasoning),
+        raw_response=content or None,
+    )
+
+
+def build_initial_observation(
+    user_request: str,
+    tool_descriptions: Sequence[str],
+) -> Observation:
+    content = "\n".join([user_request, *tool_descriptions])
+    return Observation(headline="initial observation", content=content)
+
+
+def llm_reasoning(core_llm: CoreLLM, short_term_memory: Sequence[str]) -> str:
+    """Stub for LLM reasoning over short-term memory."""
+    memory_preview = " | ".join(short_term_memory[-3:])
+    return f"{core_llm.value} reasoning over memory: {memory_preview}"
+
+
+def llm_action_generation(reasoning: str, short_term_memory: Sequence[str]) -> ActionStep:
+    """Stub for structured JSON action generation."""
+    return ActionStep(
+        name="Classification",
+        tool="classification_tool",
+        parameters={"reasoning": reasoning, "memory_size": len(short_term_memory)},
+    )
+
+
+def update_observation(action: ActionStep, tool_output: str) -> Observation:
+    return Observation(
+        headline=f"observation after {action.name}",
+        content=tool_output,
+    )
+
+
+def run_react_loop(
+    user_request: str,
+    tool_descriptions: Sequence[str],
+    tool_output: str,
+    *,
+    max_steps: int = 1,
+    core_llm: CoreLLM = DEFAULT_CORE_LLM,
+) -> Observation:
+    """Run a minimal ReAct-style loop and return the final observation."""
+    observation = build_initial_observation(user_request, tool_descriptions)
+    short_term_memory = [observation.content]
+    for _ in range(max_steps):
+        reasoning = llm_reasoning(core_llm, short_term_memory)
+        action = llm_action_generation(reasoning, short_term_memory)
+        observation = update_observation(action, tool_output)
+        short_term_memory.append(f"{reasoning} -> {action.name} -> {observation.content}")
+    return observation
+
+
+def build_iterative_trace(
+    line_number: int,
+    raw_features: Mapping[str, object],
+    preprocessed_features: Sequence[float],
+    model_outputs: Sequence[ClassificationOutput],
+) -> List[str]:
+    """Construct an iterative LLM-style trace for classification."""
+    trace = [
+        "Thought: I need to follow the plan to classify the traffic features from line number "
+        f"{line_number:03d}. I will start by loading the traffic features from the CSV file.",
+        "Action: load_data_line",
+        f'Action Input: {{"line_number": {line_number}}}',
+        "Observation: request “sessionID” ?????",
+        "Thought: I have successfully loaded the traffic features from line number "
+        f"{line_number:03d}. Now, I will proceed to preprocess the loaded traffic features to "
+        "prepare them for classification.",
+        "Action: data_preprocessing",
+        f'Action Input: {{"traffic_features": " connectionTime:{raw_features.get("connectionTime")}, '
+        f'disconnectTime:{raw_features.get("disconnectTime")}, '
+        f'RequestedDemand:{raw_features.get("RequestedDemand")}, '
+        f'kWhDelivered:{raw_features.get("kWhDelivered")}"}}',
+        f"Observation: {list(preprocessed_features)}",
+        "Thought: I have successfully preprocessed the traffic features. Now, I will proceed to "
+        "classify the preprocessed features using multiple classifiers to determine if the "
+        "traffic record is an attack.",
+    ]
+    for output in model_outputs:
+        top_labels = [
+            f"{pred.label} ({pred.confidence:.3f})" for pred in output.top_predictions
+        ]
+        trace.extend(
+            [
+                "Action: classifier",
+                f'Action Input: {{"modelname": "{output.model_name}", ?????}}',
+                f"Observation: Top predictions: {top_labels}",
+                "Thought: I have obtained the classification results from the "
+                f"{output.model_name} model. Now, I will classify the same preprocessed features "
+                "using additional classifiers to gather more predictions.",
+            ]
+        )
+    return trace
+
+
+def generate_iterative_trace_with_llm(
+    line_number: int,
+    raw_features: Mapping[str, object],
+    preprocessed_features: Sequence[float],
+    model_outputs: Sequence[ClassificationOutput],
+    *,
+    core_llm: CoreLLM = DEFAULT_CORE_LLM,
+) -> str:
+    """Use the core LLM to render the iterative Thought/Action/Observation trace."""
+    template_lines = build_iterative_trace(
+        line_number=line_number,
+        raw_features=raw_features,
+        preprocessed_features=preprocessed_features,
+        model_outputs=model_outputs,
+    )
+    system_prompt = (
+        "You are IDS-Agent. Render the iterative Thought/Action/Observation trace exactly in the "
+        "same style as the provided template, filling in values consistently."
+    )
+    user_prompt = "\n".join(template_lines)
+    client, model_name = create_llm_client()
+    response = call_llm(
+        client,
+        model_name,
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.0,
+    )
+    return response.choices[0].message.content or ""
+
+
+def generate_stepwise_llm_response(
+    model_names: Sequence[str],
+    line_number: int,
+    raw_features: Mapping[str, object],
+    preprocessed_features: Sequence[float],
+    model_outputs: Sequence[ClassificationOutput],
+    model_reasoning: Sequence[ModelReasoning],
+    *,
+    core_llm: CoreLLM = DEFAULT_CORE_LLM,
+) -> tuple[str, str, str]:
+    """Ask the core LLM to emit the full stepwise Thought/Action/Observation response."""
+    system_prompt = build_general_llm_prompt(model_names)
+    model_lines = [
+        f"{item.model_name}: {item.prediction} ({item.confidence:.3f}) | SHAP: {item.explanation}"
+        for item in model_reasoning
+    ]
+    user_prompt = (
+        f"Line number: {line_number}\n"
+        f"Traffic features: {raw_features}\n"
+        f"Preprocessed features: {list(preprocessed_features)}\n"
+        f"Model outputs:\n- " + "\n- ".join(model_lines)
+    )
+    client, model_name = create_llm_client()
+    response = call_llm(
+        client,
+        model_name,
+        [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.0,
+    )
+    return system_prompt, user_prompt, response.choices[0].message.content or ""
+
+
+def gmm_cluster_examples(embeddings: np.ndarray, n_clusters: int) -> np.ndarray:
+    """Cluster in-context examples using a Gaussian Mixture Model."""
+    from sklearn.mixture import GaussianMixture
+
+    gmm = GaussianMixture(n_components=n_clusters, random_state=42)
+    return gmm.fit_predict(embeddings)
+
+
+def select_diverse_demos(
+    examples: Sequence[Mapping[str, object]],
+    cluster_labels: Sequence[int],
+    *,
+    max_per_cluster: int = 1,
+) -> List[Mapping[str, object]]:
+    """Select in-context demonstrations from different clusters."""
+    selected: List[Mapping[str, object]] = []
+    seen_counts: dict[int, int] = {}
+    for example, label in zip(examples, cluster_labels):
+        count = seen_counts.get(label, 0)
+        if count >= max_per_cluster:
+            continue
+        selected.append(example)
+        seen_counts[label] = count + 1
+    return selected
+
+
+def retrieve_ltm_demos(
+    embeddings: np.ndarray,
+    query_embedding: np.ndarray,
+    *,
+    top_k: int = 5,
+) -> List[int]:
+    """Retrieve top-k LTM examples based on cosine similarity."""
+    norms = np.linalg.norm(embeddings, axis=1) * np.linalg.norm(query_embedding)
+    scores = embeddings @ query_embedding / np.maximum(norms, 1e-8)
+    return scores.argsort()[::-1][:top_k].tolist()
+
+
+def majority_vote_predictions(predictions: Sequence[str]) -> str:
+    """Baseline ensemble method: majority vote across ML model outputs."""
+    counts: dict[str, int] = {}
+    for label in predictions:
+        counts[label] = counts.get(label, 0) + 1
+    return sorted(counts.items(), key=lambda x: (-x[1], x[0]))[0][0]
